@@ -87,7 +87,9 @@ def main() -> int:
         cfg_manager.is_setup_complete(),
     )
 
-    return app.exec()
+    exit_code = app.exec()
+    controller.shutdown()
+    return exit_code
 
 
 if __name__ == "__main__":
