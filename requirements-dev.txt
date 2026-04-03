@@ -1,0 +1,11 @@
+# Development and test dependencies
+# Install with:
+#   pip install -r requirements-dev.txt
+
+# Testing
+pytest>=9.0
+
+# Subset of runtime deps needed to run the test suite
+# (PyQt6 is needed because intent_parser.py imports QThread at the top level)
+PyQt6>=6.7.0
+rapidfuzz>=3.9.0

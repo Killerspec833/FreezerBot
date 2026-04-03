@@ -1,0 +1,29 @@
+# Freezerbot runtime dependencies
+# Install on Raspberry Pi with:
+#   pip install --break-system-packages -r requirements.txt
+
+# Wake word detection
+pvporcupine==3.0.2
+
+# Audio I/O
+pyaudio==0.2.14
+pygame==2.6.0
+
+# Speech-to-text (Groq Whisper API)
+groq==0.9.0
+
+# Natural language / intent (Gemini)
+google-generativeai==0.7.0
+
+# Text-to-speech
+gTTS==2.5.1
+pyttsx3==2.90
+
+# UI
+PyQt6==6.7.0
+
+# Fuzzy search
+rapidfuzz==3.9.0
+
+# HTTP (used by gTTS and connectivity checks)
+requests==2.32.0

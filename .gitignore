@@ -2,16 +2,39 @@
 # Freezerbot .gitignore
 # =============================================================================
 
-# --- NEVER commit these ---
-config/.install_passphrase   # the decryption key for keys.enc
-config/config.json           # may contain decrypted API keys at runtime
-data/inventory.db            # user's personal inventory data
-data/*.db
-data/*.db-wal
-data/*.db-shm
-logs/
+# ---------------------------------------------------------------------------
+# Secrets — NEVER commit these
+# ---------------------------------------------------------------------------
+# keys.enc IS intentionally committed (AES-256 encrypted — safe in git)
+# The passphrase lives on the USB stick only
+config/.install_passphrase
 
-# --- Runtime / temp ---
+# config/config.json IS committed as a template (all keys empty)
+# Do NOT add config/config.json here — prepare_usb.sh copies it to the USB stick
+
+# ---------------------------------------------------------------------------
+# User data (lives on USB stick, not in repo)
+# ---------------------------------------------------------------------------
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# ---------------------------------------------------------------------------
+# Logs
+# ---------------------------------------------------------------------------
+logs/
+*.log
+
+# ---------------------------------------------------------------------------
+# Install / update markers (written to USB stick at runtime)
+# ---------------------------------------------------------------------------
+.install_complete
+.current_version
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
 __pycache__/
 *.py[cod]
 *.pyo
@@ -19,22 +42,19 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-.env
-*.tmp
-/tmp/
+.eggs/
 
-# --- OS ---
+# Virtual environments
+venv/
+.venv/
+env/
+
+# ---------------------------------------------------------------------------
+# OS / editor
+# ---------------------------------------------------------------------------
 .DS_Store
 Thumbs.db
-
-# --- IDE ---
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# --- Install markers ---
-.install_complete
-
-# --- keys.enc IS committed (encrypted — safe to include) ---
-# keys.enc  <-- intentionally NOT ignored
