@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+# =============================================================================
+# install.sh
+#
+# Called by bootstrap.sh after git clone.
+# Installs all system and Python dependencies, then copies app code to the
+# USB stick. Idempotent — safe to run again to update the installation.
+#
+# Arguments:
+#   $1 — USB_ROOT: path to FREEZERBOT USB stick mount
+#   $2 — CLONE_DIR: path to the git-cloned repository
+# =============================================================================
+
+set -euo pipefail
+
+USB_ROOT="${1:?USB_ROOT argument required}"
+CLONE_DIR="${2:?CLONE_DIR argument required}"
+
+LOG_FILE="$USB_ROOT/logs/install.log"
+mkdir -p "$USB_ROOT/logs"
+
+log()     { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"; }
+log_err() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $*" | tee -a "$LOG_FILE" >&2; }
+
+log "install.sh started."
+log "  USB root : $USB_ROOT"
+log "  Clone dir: $CLONE_DIR"
+
+# ---------------------------------------------------------------------------
+# Python version check
+# ---------------------------------------------------------------------------
+PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+REQUIRED_MAJOR=3
+REQUIRED_MINOR=11
+
+PY_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
+PY_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
+
+if [[ "$PY_MAJOR" -lt "$REQUIRED_MAJOR" || ( "$PY_MAJOR" -eq "$REQUIRED_MAJOR" && "$PY_MINOR" -lt "$REQUIRED_MINOR" ) ]]; then
+    log_err "Python $REQUIRED_MAJOR.$REQUIRED_MINOR+ required. Found: $PYTHON_VERSION"
+    exit 1
+fi
+log "Python version OK: $PYTHON_VERSION"
+
+# ---------------------------------------------------------------------------
+# System package dependencies
+# ---------------------------------------------------------------------------
+log "Installing system packages..."
+sudo apt-get update -qq 2>&1 | tail -1
+
+SYSTEM_PACKAGES=(
+    # Audio
+    portaudio19-dev
+    libportaudio2
+    alsa-utils
+    mpg123
+    pulseaudio
+    # Qt6 / display
+    libgl1
+    libegl1
+    libxkbcommon-x11-0
+    # X11 (needed for PyQt6 xcb platform plugin)
+    xorg
+    xinit
+    x11-xserver-utils
+    xserver-xorg-input-evdev
+    matchbox-window-manager
+    # Python build tools
+    python3-dev
+    python3-pip
+    build-essential
+    libssl-dev
+    libffi-dev
+    # Utilities
+    sqlite3
+    git
+    openssl
+)
+
+for pkg in "${SYSTEM_PACKAGES[@]}"; do
+    if dpkg -s "$pkg" &>/dev/null; then
+        log "  [OK] $pkg already installed"
+    else
+        log "  Installing $pkg ..."
+        sudo apt-get install -y -qq "$pkg" 2>&1 | tail -1 || log_err "Failed to install $pkg (continuing)"
+    fi
+done
+
+# ---------------------------------------------------------------------------
+# Python package dependencies
+# ---------------------------------------------------------------------------
+log "Installing Python packages..."
+
+PIP_PACKAGES=(
+    "pvporcupine==3.0.2"
+    "pyaudio==0.2.14"
+    "groq==0.9.0"
+    "google-generativeai==0.7.0"
+    "gTTS==2.5.1"
+    "pyttsx3==2.90"
+    "pygame==2.6.0"
+    "PyQt6==6.7.0"
+    "rapidfuzz==3.9.0"
+    "requests==2.32.0"
+)
+
+for pkg in "${PIP_PACKAGES[@]}"; do
+    pkg_name="${pkg%%==*}"
+    if python3 -c "import importlib; importlib.import_module('${pkg_name//-/_}')" 2>/dev/null; then
+        log "  [OK] $pkg_name already installed"
+    else
+        log "  Installing $pkg ..."
+        pip3 install --break-system-packages -q "$pkg" 2>&1 | tail -1 || \
+            log_err "Failed to install $pkg (continuing)"
+    fi
+done
+
+# ---------------------------------------------------------------------------
+# Copy application code from clone to USB stick
+# ---------------------------------------------------------------------------
+log "Copying application code to USB stick..."
+
+# Preserve config/, data/, logs/, wake_words/ — only update app/ and scripts/
+rsync -a --delete \
+    "$CLONE_DIR/app/"       "$USB_ROOT/app/"       2>>"$LOG_FILE"
+rsync -a --delete \
+    "$CLONE_DIR/scripts/"   "$USB_ROOT/scripts/"   2>>"$LOG_FILE"
+
+# Copy keys.enc if present in the repo (it may not be on fresh clones)
+if [[ -f "$CLONE_DIR/keys.enc" ]]; then
+    cp "$CLONE_DIR/keys.enc" "$USB_ROOT/keys.enc"
+    log "  keys.enc copied."
+fi
+
+# Ensure required directories exist
+mkdir -p "$USB_ROOT/data" "$USB_ROOT/logs" "$USB_ROOT/wake_words"
+chmod +x "$USB_ROOT/scripts/"*.sh 2>/dev/null || true
+chmod +x "$USB_ROOT/bootstrap.sh"  2>/dev/null || true
+
+log "Application code installed."
+
+# ---------------------------------------------------------------------------
+# Install / update systemd service
+# ---------------------------------------------------------------------------
+SERVICE_SRC="$CLONE_DIR/scripts/freezerbot.service"
+SERVICE_DEST="/etc/systemd/system/freezerbot.service"
+
+if [[ -f "$SERVICE_SRC" ]]; then
+    if ! diff -q "$SERVICE_SRC" "$SERVICE_DEST" &>/dev/null; then
+        log "Installing/updating systemd service..."
+        sudo cp "$SERVICE_SRC" "$SERVICE_DEST"
+        sudo systemctl daemon-reload
+        sudo systemctl enable freezerbot.service
+        log "  systemd service installed and enabled."
+    else
+        log "  systemd service already up to date."
+    fi
+else
+    log "  freezerbot.service not found in repo — skipping systemd setup."
+fi
+
+# ---------------------------------------------------------------------------
+# Configure auto-login (console, user pi)
+# ---------------------------------------------------------------------------
+AUTOLOGIN_CONF="/etc/systemd/system/getty@tty1.service.d/autologin.conf"
+if [[ ! -f "$AUTOLOGIN_CONF" ]]; then
+    log "Configuring console auto-login for user pi..."
+    sudo mkdir -p "$(dirname "$AUTOLOGIN_CONF")"
+    sudo tee "$AUTOLOGIN_CONF" > /dev/null <<'EOF'
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin pi --noclear %I $TERM
+EOF
+    log "  Auto-login configured."
+fi
+
+# ---------------------------------------------------------------------------
+# Mark installation complete
+# ---------------------------------------------------------------------------
+date > "$USB_ROOT/.install_complete"
+log "Install complete. Marker written to .install_complete"

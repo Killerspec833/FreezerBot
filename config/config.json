@@ -1,0 +1,51 @@
+{
+  "setup_complete": false,
+  "wake_word": "",
+  "wake_word_ppn_filename": "",
+  "api_keys": {
+    "picovoice_access_key": "",
+    "groq_api_key": "",
+    "gemini_api_key": ""
+  },
+  "locations": {
+    "basement_freezer": {
+      "display_name": "Basement Freezer",
+      "aliases": ["basement", "chest freezer", "basement freezer"]
+    },
+    "kitchen_freezer": {
+      "display_name": "Kitchen Freezer",
+      "aliases": ["kitchen freezer", "kitchen", "tall one", "tall freezer"]
+    },
+    "fridge": {
+      "display_name": "Fridge",
+      "aliases": ["fridge", "fridge freezer", "small freezer"]
+    }
+  },
+  "audio": {
+    "input_device_index": null,
+    "silence_threshold_rms": 500,
+    "silence_duration_seconds": 1.5,
+    "max_recording_seconds": 8,
+    "tts_engine": "gtts",
+    "tts_fallback_engine": "pyttsx3"
+  },
+  "ui": {
+    "sleep_timeout_seconds": 300,
+    "screen_width": 480,
+    "screen_height": 800,
+    "orientation": "portrait"
+  },
+  "network": {
+    "connectivity_check_host": "8.8.8.8",
+    "connectivity_check_port": 53,
+    "connectivity_check_timeout_seconds": 2
+  },
+  "logging": {
+    "level": "INFO",
+    "max_file_bytes": 5242880,
+    "backup_count": 3
+  },
+  "fuzzy_search": {
+    "similarity_threshold": 70
+  }
+}

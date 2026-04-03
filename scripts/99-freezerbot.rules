@@ -1,0 +1,8 @@
+# Udev rule: start Freezerbot service when FREEZERBOT USB stick is mounted.
+# Install to: /etc/udev/rules.d/99-freezerbot.rules
+#
+# After copying, reload rules:
+#   sudo udevadm control --reload-rules
+
+ACTION=="add", KERNEL=="sd[b-z]1", ENV{ID_FS_LABEL}=="FREEZERBOT", \
+    RUN+="/bin/systemctl start freezerbot.service"
