@@ -19,7 +19,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # Configuration — edit GITHUB_REPO_URL before first use
 # ---------------------------------------------------------------------------
-GITHUB_REPO_URL="https://github.com/YOUR_GITHUB_USERNAME/freezerbot.git"
+GITHUB_REPO_URL="https://github.com/Killerspec833/FreezerBot.git"
 GITHUB_REPO_BRANCH="main"
 
 # ---------------------------------------------------------------------------
