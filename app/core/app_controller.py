@@ -13,6 +13,7 @@ from app.core.path_resolver import get_db_path
 from app.core.state_machine import AppState, StateMachine
 from app.database.db_manager import DatabaseManager
 from app.database.fuzzy_search import FuzzySearch
+from app.intent.intent_parser import IntentParserThread
 from app.services.logger import get_logger
 
 log = get_logger(__name__)
@@ -48,6 +49,9 @@ class AppController(QObject):
 
         # Holds the most recent parsed intent while waiting for confirmation
         self._pending_intent = None
+
+        # Keeps a reference to running threads so they aren't garbage-collected
+        self._intent_thread: IntentParserThread | None = None
 
         self._connect_signals()
         log.info("AppController initialised. State: %s", self._sm.current.name)
@@ -141,6 +145,17 @@ class AppController(QObject):
     # ------------------------------------------------------------------
     # Public hooks for audio pipeline (Phase 6)
     # ------------------------------------------------------------------
+
+    def on_transcript_ready(self, transcript: str) -> None:
+        """Called by STTThread when Groq Whisper returns a transcript."""
+        log.info("Transcript received: '%s'", transcript)
+        self._win.listening_screen.set_status("Thinking…")
+        self._intent_thread = IntentParserThread(transcript, self._cfg, parent=self)
+        self._intent_thread.intent_parsed.connect(self.on_intent_parsed)
+        self._intent_thread.error.connect(
+            lambda e: log.error("Intent parser error: %s", e)
+        )
+        self._intent_thread.start()
 
     def on_wake_word_detected(self) -> None:
         """Called by WakeWordDetector thread (via Qt queued signal)."""
