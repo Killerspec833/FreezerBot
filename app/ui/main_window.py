@@ -95,7 +95,7 @@ class MainWindow(QMainWindow):
         self._listening    = ListeningScreen(self)
         self._confirmation = ConfirmationScreen(self)
         self._inventory    = InventoryScreen(location_names, self)
-        self._setup        = SetupWizard(self)
+        self._setup        = SetupWizard(self._cfg, self)
 
         # Order must match _IDX_* constants
         for screen in (

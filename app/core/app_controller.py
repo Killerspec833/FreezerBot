@@ -114,8 +114,12 @@ class AppController(QObject):
 
     def _on_setup_complete(self, config_data: dict) -> None:
         log.info("Setup wizard complete. Saving config.")
-        # Phase 3 will populate config_data fully.
+        self._cfg.set_wake_word(
+            wake_word=config_data.get("wake_word", ""),
+            ppn_filename=config_data.get("wake_word_ppn_filename", ""),
+        )
         self._cfg.set_setup_complete(True)
+        log.info("Config saved. Wake word: %s", config_data.get("wake_word"))
         self._sm.force(AppState.SLEEP)
 
     # ------------------------------------------------------------------
