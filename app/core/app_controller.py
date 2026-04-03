@@ -9,7 +9,10 @@ later phases.
 from PyQt6.QtCore import QObject, QTimer
 
 from app.core.config_manager import ConfigManager
+from app.core.path_resolver import get_db_path
 from app.core.state_machine import AppState, StateMachine
+from app.database.db_manager import DatabaseManager
+from app.database.fuzzy_search import FuzzySearch
 from app.services.logger import get_logger
 
 log = get_logger(__name__)
@@ -28,12 +31,23 @@ class AppController(QObject):
         self._sm  = state_machine
         self._win = window
 
+        # Database
+        self._db = DatabaseManager(get_db_path())
+        self._db.open()
+        self._fuzzy = FuzzySearch(
+            self._db,
+            default_threshold=cfg_manager.config.fuzzy_search.similarity_threshold,
+        )
+
         # Inactivity timer — fires after sleep_timeout_seconds of no interaction
         self._inactivity_timer = QTimer(self)
         self._inactivity_timer.setSingleShot(True)
         self._inactivity_timer.timeout.connect(self._on_inactivity)
         timeout_ms = self._cfg.config.ui.sleep_timeout_seconds * 1000
         self._inactivity_timer.start(timeout_ms)
+
+        # Holds the most recent parsed intent while waiting for confirmation
+        self._pending_intent = None
 
         self._connect_signals()
         log.info("AppController initialised. State: %s", self._sm.current.name)
@@ -90,8 +104,10 @@ class AppController(QObject):
     def _on_confirmed(self) -> None:
         log.info("User confirmed action.")
         self.reset_inactivity_timer()
-        # Phase 5 will write to the database here.
-        # For now, just return to sleep.
+        intent = self._pending_intent
+        if intent is not None:
+            self._execute_intent(intent)
+        self._pending_intent = None
         self._sm.transition(AppState.SLEEP)
 
     def _on_denied(self) -> None:
@@ -137,25 +153,103 @@ class AppController(QObject):
         self.reset_inactivity_timer()
         intent_type = parsed_intent.intent_type.name
 
-        if intent_type in ("ADD", "REMOVE"):
+        if intent_type == "ADD":
+            self._pending_intent = parsed_intent
             loc_display = self._cfg.get_location_display_name(
                 parsed_intent.location or ""
             )
             self._win.confirmation_screen.populate(
-                intent_type=intent_type,
+                intent_type="ADD",
                 item_name=parsed_intent.item_name or "",
                 quantity=parsed_intent.quantity or "",
                 location_display=loc_display,
             )
             self._sm.transition(AppState.CONFIRMING)
 
-        elif intent_type in ("QUERY", "LIST"):
-            # Phase 5: query DB and show results
+        elif intent_type == "REMOVE":
+            decision, match = self._fuzzy.find_for_removal(
+                parsed_intent.item_name or "",
+                location_filter=parsed_intent.location or None,
+            )
+            if decision == "none":
+                log.info("No match for removal: '%s'", parsed_intent.item_name)
+                # TTS handled in Phase 6; return to LISTENING
+                self._sm.transition(AppState.LISTENING)
+                return
+            # Store the resolved DB item id on the intent for _execute_intent
+            parsed_intent._resolved_item_id = match.item.id
+            parsed_intent._resolved_item_name = match.item.item_name
+            self._pending_intent = parsed_intent
+            loc_display = self._cfg.get_location_display_name(match.item.location)
+            self._win.confirmation_screen.populate(
+                intent_type="REMOVE",
+                item_name=match.item.item_name,
+                quantity=match.item.quantity,
+                location_display=loc_display,
+            )
+            self._sm.transition(AppState.CONFIRMING)
+
+        elif intent_type == "QUERY":
+            results = self._fuzzy.search_all_locations(
+                parsed_intent.item_name or ""
+            )
+            rows = [
+                (r.item.item_name, r.item.quantity, r.item.location)
+                for r in results
+            ]
+            self._win.inventory_screen.load_data(rows, select_location="all")
+            self._sm.transition(AppState.INVENTORY)
+
+        elif intent_type == "LIST":
+            loc_key = parsed_intent.location or "all"
+            if loc_key == "all":
+                rows = [
+                    (i.item_name, i.quantity, i.location)
+                    for i in self._db.get_all_items()
+                ]
+            else:
+                rows = [
+                    (i.item_name, i.quantity, i.location)
+                    for i in self._db.list_by_location(loc_key)
+                ]
+            self._win.inventory_screen.load_data(rows, select_location=loc_key)
             self._sm.transition(AppState.INVENTORY)
 
         elif intent_type == "UNKNOWN":
             log.warning("Unknown intent — staying in LISTENING.")
             # TTS "Sorry, I didn't understand" handled in Phase 6
+
+    def _execute_intent(self, intent) -> None:
+        """Write a confirmed ADD or REMOVE to the database."""
+        intent_type = intent.intent_type.name
+
+        if intent_type == "ADD":
+            item = self._db.add_item(
+                item_name=intent.item_name or "",
+                quantity=intent.quantity or "1",
+                location=intent.location or "",
+            )
+            self._db.log_action(
+                action="ADD",
+                item_name=item.item_name,
+                quantity=item.quantity,
+                location=item.location,
+                transcript=getattr(intent, "raw_transcript", None),
+            )
+            log.info("DB ADD confirmed: id=%d '%s'", item.id, item.item_name)
+
+        elif intent_type == "REMOVE":
+            item_id = getattr(intent, "_resolved_item_id", None)
+            if item_id is not None:
+                self._db.remove_item(item_id)
+                self._db.log_action(
+                    action="REMOVE",
+                    item_name=getattr(intent, "_resolved_item_name", ""),
+                    quantity=intent.quantity,
+                    location=intent.location,
+                    transcript=getattr(intent, "raw_transcript", None),
+                )
+                log.info("DB REMOVE confirmed: id=%d", item_id)
 
     def on_confirm_voice(self) -> None:
         """Called when voice CONFIRM intent is detected while in CONFIRMING."""
