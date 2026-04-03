@@ -266,8 +266,16 @@ class AppController(QObject):
 
             parsed_intent._resolved_item_id   = match.item.id
             parsed_intent._resolved_item_name = match.item.item_name
-            self._pending_intent = parsed_intent
             loc_display = self._cfg.get_location_display_name(match.item.location)
+
+            if decision == "direct":
+                # Score >= 90: high-confidence match — execute without confirmation
+                self._execute_intent(parsed_intent)
+                self._sm.transition(AppState.SLEEP)
+                return
+
+            # "confirm" — score 70-89: show confirmation screen
+            self._pending_intent = parsed_intent
             self._win.confirmation_screen.populate(
                 intent_type="REMOVE",
                 item_name=match.item.item_name,
