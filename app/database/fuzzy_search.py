@@ -1,9 +1,10 @@
 """
 FuzzySearch — finds inventory items matching a spoken query.
 
-Uses rapidfuzz token_sort_ratio which handles:
+Uses rapidfuzz token_set_ratio which handles:
+  - Partial queries ("beef" matching "ground beef" with 100% score)
   - Word order differences ("beef ground" vs "ground beef")
-  - Partial matches ("chicken" matching "chicken breast" and "chicken thighs")
+  - Subset matching ("chicken" matching "chicken breast" and "chicken thighs")
   - Minor spelling variations
 
 REMOVE logic:
@@ -17,6 +18,11 @@ from app.database.models import InventoryItem, SearchResult
 from app.services.logger import get_logger
 
 log = get_logger(__name__)
+
+
+def _normalise_phrase(text: str) -> str:
+    """Lower-case and collapse whitespace for safe exact-name comparisons."""
+    return " ".join(text.strip().lower().split())
 
 
 class FuzzySearch:
@@ -38,6 +44,23 @@ class FuzzySearch:
 
         Returns SearchResult list sorted by score descending,
         filtered to scores >= threshold.
+
+        **Duplicate-name deduplication (silent drop):**
+        When ``location_filter`` is ``None`` this method fetches all items
+        across every location and builds a ``name → item`` map that keeps
+        only the *first* row encountered for each unique ``item_name``.
+        Subsequent rows with the same name (e.g. "chicken" stored in both
+        the basement freezer and the fridge) are silently discarded, so the
+        result set will contain at most one entry per name and will not
+        reflect the full inventory picture for that name.
+
+        If you need all locations for a given item — for example when
+        answering a QUERY intent — call ``search_all_locations()`` instead.
+        It keys on ``(item_name, location)`` so every location-specific row
+        is preserved.  Only use this method directly when you have already
+        narrowed to a single location via ``location_filter``, or when you
+        explicitly want the first-match-wins deduplication behaviour (e.g.
+        in the REMOVE flow, where there is an unambiguous target location).
         """
         from rapidfuzz import fuzz, process
 
@@ -61,7 +84,7 @@ class FuzzySearch:
         matches = process.extract(
             query_normalised,
             names,
-            scorer=fuzz.token_sort_ratio,
+            scorer=fuzz.token_set_ratio,
             limit=10,
             score_cutoff=self._threshold,
         )
@@ -103,7 +126,7 @@ class FuzzySearch:
         matches = process.extract(
             query_normalised,
             names,
-            scorer=fuzz.token_sort_ratio,
+            scorer=fuzz.token_set_ratio,
             limit=20,
             score_cutoff=self._threshold,
         )
@@ -138,7 +161,10 @@ class FuzzySearch:
             return "none", None
 
         best = results[0]
-        if best.score >= 90:
+        query_normalised = _normalise_phrase(query)
+        item_name_normalised = _normalise_phrase(best.item.item_name)
+
+        if best.score >= 90 and query_normalised == item_name_normalised:
             log.info(
                 "Direct removal match: '%s' → '%s' (%.1f%%)",
                 query, best.item.item_name, best.score,

@@ -95,7 +95,13 @@ class TestFindForRemoval:
         db.add_item("chicken thighs boneless skinless", "4", "basement_freezer")
         decision, match = low_threshold_fuzzy.find_for_removal("chicken thigh")
         # token_set_ratio("chicken thigh", "chicken thighs boneless skinless") should be >= 70
-        assert decision in ("direct", "confirm")
+        assert decision == "confirm"
+        assert match is not None
+
+    def test_partial_subset_match_requires_confirmation(self, db, fuzzy):
+        db.add_item("ground beef", "2 packages", "basement_freezer")
+        decision, match = fuzzy.find_for_removal("beef")
+        assert decision == "confirm"
         assert match is not None
 
 

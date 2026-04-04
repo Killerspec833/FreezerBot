@@ -12,6 +12,8 @@ Owns and connects all subsystems:
   - Inactivity timer (5-min sleep)
 """
 
+import os
+
 from PyQt6.QtCore import QObject, QTimer
 
 from app.audio.recorder import Recorder
@@ -96,7 +98,6 @@ class AppController(QObject):
             log.error("Cannot resolve wake word path: %s", e)
             return
 
-        import os
         if not os.path.isfile(ppn_path):
             log.error("Wake word file not found: %s", ppn_path)
             return
@@ -133,6 +134,11 @@ class AppController(QObject):
         )
 
     def _on_inactivity(self) -> None:
+        # Do not interrupt an active confirmation — the user may be mid-tap.
+        if self._sm.current == AppState.CONFIRMING:
+            log.debug("Inactivity timeout while CONFIRMING — resetting timer.")
+            self.reset_inactivity_timer()
+            return
         log.info("Inactivity timeout — going to sleep.")
         self._sm.force(AppState.SLEEP)
 
@@ -143,8 +149,8 @@ class AppController(QObject):
     def _on_touch_wake(self) -> None:
         self.reset_inactivity_timer()
         if self._sm.current == AppState.SLEEP:
-            self._sm.transition(AppState.LISTENING)
-            self._start_recording()
+            if self._sm.transition(AppState.LISTENING):
+                self._start_recording()
 
     # ------------------------------------------------------------------
     # Wake word detected
@@ -153,8 +159,8 @@ class AppController(QObject):
     def on_wake_word_detected(self) -> None:
         self.reset_inactivity_timer()
         if self._sm.current in (AppState.SLEEP, AppState.INVENTORY):
-            self._sm.transition(AppState.LISTENING)
-            self._start_recording()
+            if self._sm.transition(AppState.LISTENING):
+                self._start_recording()
 
     # ------------------------------------------------------------------
     # Recording
@@ -264,8 +270,10 @@ class AppController(QObject):
                 self._sm.transition(AppState.SLEEP)
                 return
 
-            parsed_intent._resolved_item_id   = match.item.id
-            parsed_intent._resolved_item_name = match.item.item_name
+            parsed_intent._resolved_item_id       = match.item.id
+            parsed_intent._resolved_item_name     = match.item.item_name
+            parsed_intent._resolved_item_location = match.item.location
+            parsed_intent._resolved_item_quantity = match.item.quantity
             loc_display = self._cfg.get_location_display_name(match.item.location)
 
             if decision == "direct":
@@ -363,23 +371,25 @@ class AppController(QObject):
                 item_name=item.item_name,
                 quantity=item.quantity,
                 location=item.location,
-                transcript=getattr(intent, "raw_transcript", None),
+                transcript=intent.raw_transcript,
             )
             loc_display = self._cfg.get_location_display_name(item.location)
             self._tts.speak(f"Added. {item.item_name} is now in the {loc_display}.")
             log.info("DB ADD: id=%d '%s'", item.id, item.item_name)
 
         elif intent_type == "REMOVE":
-            item_id   = getattr(intent, "_resolved_item_id", None)
-            item_name = getattr(intent, "_resolved_item_name", "item")
+            item_id   = intent._resolved_item_id
+            item_name = intent._resolved_item_name or "item"
+            item_loc  = intent._resolved_item_location or intent.location
+            item_qty  = intent._resolved_item_quantity or intent.quantity
             if item_id is not None:
                 self._db.remove_item(item_id)
                 self._db.log_action(
                     action="REMOVE",
                     item_name=item_name,
-                    quantity=intent.quantity,
-                    location=intent.location,
-                    transcript=getattr(intent, "raw_transcript", None),
+                    quantity=item_qty,
+                    location=item_loc,
+                    transcript=intent.raw_transcript,
                 )
                 self._tts.speak(f"Removed. {item_name} has been taken out.")
                 log.info("DB REMOVE: id=%d '%s'", item_id, item_name)

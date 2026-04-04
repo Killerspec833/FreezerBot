@@ -27,6 +27,10 @@ class ParsedIntent:
     raw_transcript: Optional[str]   = None  # original Whisper text
     notes:          Optional[str]   = None  # Gemini internal notes (never shown)
 
-    # Set by AppController during REMOVE flow after fuzzy matching
-    _resolved_item_id:   Optional[int] = field(default=None, repr=False)
-    _resolved_item_name: Optional[str] = field(default=None, repr=False)
+    # Set by AppController during REMOVE flow after fuzzy matching.
+    # These are proper optional fields (not dynamic attributes) so that
+    # static analysis, type checkers, and dataclasses.asdict() all see them.
+    _resolved_item_id:       Optional[int] = field(default=None, repr=False)
+    _resolved_item_name:     Optional[str] = field(default=None, repr=False)
+    _resolved_item_location: Optional[str] = field(default=None, repr=False)
+    _resolved_item_quantity: Optional[str] = field(default=None, repr=False)

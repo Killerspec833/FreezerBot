@@ -74,6 +74,19 @@ class DatabaseManager:
         self._conn: Optional[sqlite3.Connection] = None
 
     # ------------------------------------------------------------------
+    # Connection guard
+    # ------------------------------------------------------------------
+
+    @property
+    def _connection(self) -> sqlite3.Connection:
+        """Return the active connection, or raise a clear error if not yet opened."""
+        if self._conn is None:
+            raise RuntimeError(
+                "DatabaseManager: no active connection — call open() before using the database."
+            )
+        return self._conn
+
+    # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
@@ -115,14 +128,14 @@ class DatabaseManager:
         quantity  = quantity.strip()
         location  = location.strip()
 
-        cur = self._conn.execute(
+        cur = self._connection.execute(
             """
             INSERT INTO inventory (item_name, quantity, location)
             VALUES (?, ?, ?)
             """,
             (item_name, quantity, location),
         )
-        self._conn.commit()
+        self._connection.commit()
         row_id = cur.lastrowid
         log.info("ADD: id=%d  item='%s'  qty='%s'  loc='%s'",
                  row_id, item_name, quantity, location)
@@ -130,10 +143,10 @@ class DatabaseManager:
 
     def remove_item(self, item_id: int) -> bool:
         """Delete an inventory row by primary key. Returns True if a row was deleted."""
-        cur = self._conn.execute(
+        cur = self._connection.execute(
             "DELETE FROM inventory WHERE id = ?", (item_id,)
         )
-        self._conn.commit()
+        self._connection.commit()
         deleted = cur.rowcount > 0
         if deleted:
             log.info("REMOVE: id=%d", item_id)
@@ -143,14 +156,14 @@ class DatabaseManager:
 
     def get_all_items(self) -> list[InventoryItem]:
         """Return every inventory row ordered by location then item name."""
-        rows = self._conn.execute(
+        rows = self._connection.execute(
             "SELECT * FROM inventory ORDER BY location, item_name"
         ).fetchall()
         return [self._row_to_item(r) for r in rows]
 
     def list_by_location(self, location_key: str) -> list[InventoryItem]:
         """Return all items in a specific location."""
-        rows = self._conn.execute(
+        rows = self._connection.execute(
             "SELECT * FROM inventory WHERE location = ? ORDER BY item_name",
             (location_key,),
         ).fetchall()
@@ -159,12 +172,12 @@ class DatabaseManager:
     def get_item_names(self, location_key: Optional[str] = None) -> list[str]:
         """Return distinct item names (optionally filtered by location)."""
         if location_key:
-            rows = self._conn.execute(
+            rows = self._connection.execute(
                 "SELECT DISTINCT item_name FROM inventory WHERE location = ?",
                 (location_key,),
             ).fetchall()
         else:
-            rows = self._conn.execute(
+            rows = self._connection.execute(
                 "SELECT DISTINCT item_name FROM inventory"
             ).fetchall()
         return [r["item_name"] for r in rows]
@@ -182,17 +195,17 @@ class DatabaseManager:
         transcript: Optional[str] = None,
     ) -> None:
         """Write an ADD or REMOVE event to the audit log."""
-        self._conn.execute(
+        self._connection.execute(
             """
             INSERT INTO audit_log (action, item_name, quantity, location, transcript)
             VALUES (?, ?, ?, ?, ?)
             """,
             (action.upper(), item_name, quantity, location, transcript),
         )
-        self._conn.commit()
+        self._connection.commit()
 
     def get_audit_log(self, limit: int = 100) -> list[AuditEntry]:
-        rows = self._conn.execute(
+        rows = self._connection.execute(
             "SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT ?",
             (limit,),
         ).fetchall()
@@ -203,7 +216,7 @@ class DatabaseManager:
     # ------------------------------------------------------------------
 
     def _fetch_by_id(self, item_id: int) -> InventoryItem:
-        row = self._conn.execute(
+        row = self._connection.execute(
             "SELECT * FROM inventory WHERE id = ?", (item_id,)
         ).fetchone()
         if not row:
@@ -235,29 +248,29 @@ class DatabaseManager:
 
     def _create_schema(self) -> None:
         """Create tables and indexes if they do not exist."""
-        self._conn.execute(_SQL_CREATE_SCHEMA_VERSION)
-        self._conn.execute(_SQL_CREATE_INVENTORY)
-        self._conn.execute(_SQL_CREATE_AUDIT_LOG)
+        self._connection.execute(_SQL_CREATE_SCHEMA_VERSION)
+        self._connection.execute(_SQL_CREATE_INVENTORY)
+        self._connection.execute(_SQL_CREATE_AUDIT_LOG)
         for idx_sql in _SQL_CREATE_INDEXES:
-            self._conn.execute(idx_sql)
-        self._conn.commit()
+            self._connection.execute(idx_sql)
+        self._connection.commit()
 
         # Seed schema_version on first ever open
-        version = self._conn.execute(
+        version = self._connection.execute(
             "SELECT MAX(version) AS v FROM schema_version"
         ).fetchone()["v"]
 
         if version is None:
-            self._conn.execute(
+            self._connection.execute(
                 "INSERT INTO schema_version (version) VALUES (?)",
                 (_CURRENT_VERSION,),
             )
-            self._conn.commit()
+            self._connection.commit()
             log.debug("Schema version seeded at %d.", _CURRENT_VERSION)
 
     def _run_migrations(self) -> None:
         """Apply any pending migrations in order."""
-        current = self._conn.execute(
+        current = self._connection.execute(
             "SELECT MAX(version) AS v FROM schema_version"
         ).fetchone()["v"] or 0
 
@@ -265,9 +278,9 @@ class DatabaseManager:
             sql = _MIGRATIONS[version]
             if sql:
                 log.info("Applying migration to schema version %d.", version)
-                self._conn.executescript(sql)
-                self._conn.execute(
+                self._connection.executescript(sql)
+                self._connection.execute(
                     "INSERT INTO schema_version (version) VALUES (?)", (version,)
                 )
-                self._conn.commit()
+                self._connection.commit()
                 log.info("Migration to v%d complete.", version)

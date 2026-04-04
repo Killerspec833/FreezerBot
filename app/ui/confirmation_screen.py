@@ -12,7 +12,7 @@ Layout (480 x 800 portrait):
 """
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -74,9 +74,7 @@ class ConfirmationScreen(QWidget):
         self._table.setRowCount(len(rows))
         for row, (key, value) in enumerate(rows):
             key_item = QTableWidgetItem(key)
-            key_item.setForeground(
-                self._table.palette().color(self._table.palette().ColorRole.Mid)
-            )
+            key_item.setForeground(QColor(COLOR_TEXT_SECONDARY))
             key_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
 
             val_item = QTableWidgetItem(value)

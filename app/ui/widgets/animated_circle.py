@@ -8,7 +8,7 @@ that spawn periodically, expand outward, and fade to transparent.
 from dataclasses import dataclass, field
 from typing import List
 
-from PyQt6.QtCore import QPointF, QTimer
+from PyQt6.QtCore import QPointF, Qt, QTimer
 from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtWidgets import QWidget
 
@@ -110,7 +110,7 @@ class AnimatedCircle(QWidget):
             color.setAlphaF(max(0.0, ring.opacity))
             pen = QPen(color, RIPPLE_RING_WIDTH)
             painter.setPen(pen)
-            painter.setBrush(painter.brush().style().NoBrush)  # type: ignore[attr-defined]
+            painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawEllipse(centre, ring.radius, ring.radius)
 
         # Solid blue centre circle

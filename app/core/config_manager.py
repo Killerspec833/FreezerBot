@@ -5,6 +5,7 @@ All other modules access config through this module — never raw JSON reads.
 
 import json
 import os
+import tempfile
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -102,10 +103,25 @@ class ConfigManager:
         return self
 
     def save(self) -> None:
-        """Write current config back to disk."""
-        os.makedirs(os.path.dirname(self._path), exist_ok=True)
-        with open(self._path, "w", encoding="utf-8") as f:
-            json.dump(self._to_dict(), f, indent=2)
+        """Write current config back to disk atomically.
+
+        Writes to a sibling temp file first, then os.replace() renames it
+        into place. This prevents a corrupt config.json if the Pi loses
+        power mid-write.
+        """
+        dir_name = os.path.dirname(self._path)
+        os.makedirs(dir_name, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(dir=dir_name, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(self._to_dict(), f, indent=2)
+            os.replace(tmp_path, self._path)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
 
     # ------------------------------------------------------------------
     # Convenience accessors

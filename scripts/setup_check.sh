@@ -43,21 +43,46 @@ ok "Python $PY_VER"
 # ---------------------------------------------------------------------------
 # Python packages — check and install missing
 # ---------------------------------------------------------------------------
-declare -A PY_PACKAGES=(
-    ["pvporcupine"]="pvporcupine==3.0.2"
-    ["pyaudio"]="pyaudio==0.2.14"
-    ["groq"]="groq==0.9.0"
-    ["google.generativeai"]="google-generativeai==0.7.0"
-    ["gtts"]="gTTS==2.5.1"
-    ["pyttsx3"]="pyttsx3==2.90"
-    ["pygame"]="pygame==2.6.0"
-    ["PyQt6"]="PyQt6==6.7.0"
-    ["rapidfuzz"]="rapidfuzz==3.9.0"
-    ["requests"]="requests==2.32.0"
+
+# Single source of truth for package versions is requirements.txt, located
+# two directories up from this script (repo root / USB root).
+REQUIREMENTS="$USB_ROOT/requirements.txt"
+# Fall back to the scripts/ sibling location if running from the repo directly
+[[ -f "$REQUIREMENTS" ]] || REQUIREMENTS="$(cd "$(dirname "$0")/.." && pwd)/requirements.txt"
+
+if [[ ! -f "$REQUIREMENTS" ]]; then
+    log_err "requirements.txt not found (expected at $REQUIREMENTS)"
+    exit 1
+fi
+
+# Map from pip distribution name (lower-case) to Python import name for
+# packages where the two differ.
+declare -A IMPORT_OVERRIDE=(
+    ["google-generativeai"]="google.generativeai"
+    ["gtts"]="gtts"
+    ["pyqt6"]="PyQt6"
 )
 
-for import_name in "${!PY_PACKAGES[@]}"; do
-    pkg_spec="${PY_PACKAGES[$import_name]}"
+_import_name_for() {
+    local dist_lower
+    dist_lower=$(echo "$1" | tr '[:upper:]' '[:lower:]' | tr '-' '_')
+    if [[ -v "IMPORT_OVERRIDE[$(echo "$1" | tr '[:upper:]' '[:lower:]')]" ]]; then
+        echo "${IMPORT_OVERRIDE[$(echo "$1" | tr '[:upper:]' '[:lower:]')]}"
+    else
+        echo "$dist_lower"
+    fi
+}
+
+log "Checking Python packages against $REQUIREMENTS ..."
+
+while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    [[ -z "${line// }" ]] && continue
+
+    pkg_spec="$line"
+    dist_name="${pkg_spec%%[=><!\[]*}"
+    import_name=$(_import_name_for "$dist_name")
+
     if python3 -c "import $import_name" 2>/dev/null; then
         ok "$import_name"
     else
@@ -66,7 +91,7 @@ for import_name in "${!PY_PACKAGES[@]}"; do
             ok "$import_name (installed)" || \
             log_err "Failed to install $pkg_spec"
     fi
-done
+done < "$REQUIREMENTS"
 
 # ---------------------------------------------------------------------------
 # USB stick directories

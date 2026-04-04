@@ -84,15 +84,19 @@ PASSPHRASE="$(python3 -c "import secrets, string; \
 # ---------------------------------------------------------------------------
 # Build keys JSON and encrypt it
 # ---------------------------------------------------------------------------
-KEYS_JSON=$(python3 -c "
-import json, sys
+# Pass keys via environment variables, not argv, to avoid them appearing in
+# `ps aux` / /proc/$PID/cmdline during the brief lifetime of the process.
+KEYS_JSON=$(PICO_KEY="$PICO_KEY" GROQ_KEY="$GROQ_KEY" GEMINI_KEY="$GEMINI_KEY" \
+python3 - <<'PYEOF'
+import json, os
 keys = {
-    'picovoice_access_key': sys.argv[1],
-    'groq_api_key':         sys.argv[2],
-    'gemini_api_key':       sys.argv[3],
+    'picovoice_access_key': os.environ['PICO_KEY'],
+    'groq_api_key':         os.environ['GROQ_KEY'],
+    'gemini_api_key':       os.environ['GEMINI_KEY'],
 }
 print(json.dumps(keys))
-" "$PICO_KEY" "$GROQ_KEY" "$GEMINI_KEY")
+PYEOF
+)
 
 ENC_OUT="$REPO_ROOT/keys.enc"
 

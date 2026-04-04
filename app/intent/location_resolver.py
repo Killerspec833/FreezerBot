@@ -72,7 +72,7 @@ class LocationResolver:
             match = process.extractOne(
                 raw_clean,
                 self._all_aliases,
-                scorer=fuzz.token_sort_ratio,
+                scorer=fuzz.token_set_ratio,
                 score_cutoff=_FUZZY_THRESHOLD,
             )
             if match:

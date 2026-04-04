@@ -26,8 +26,9 @@ _STOP_SENTINEL = object()   # poison pill to stop the thread
 
 def _is_online(host: str = "8.8.8.8", port: int = 53, timeout: int = 2) -> bool:
     try:
-        socket.setdefaulttimeout(timeout)
-        socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect((host, port))
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(timeout)
+            sock.connect((host, port))
         return True
     except OSError:
         return False

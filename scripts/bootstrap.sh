@@ -104,7 +104,8 @@ if [[ -f "$KEYS_ENC" && -f "$PASSPHRASE_FILE" ]]; then
     KEYS_ALREADY_SET=$(python3 -c "
 import json, sys
 try:
-    cfg = json.load(open(sys.argv[1]))
+    with open(sys.argv[1], encoding='utf-8') as fh:
+        cfg = json.load(fh)
     keys = cfg.get('api_keys', {})
     all_set = all([
         keys.get('picovoice_access_key'),
@@ -132,26 +133,40 @@ import json, sys
 config_path = sys.argv[1]
 keys_path   = sys.argv[2]
 
-with open(config_path, 'r') as f:
+with open(config_path, 'r', encoding='utf-8') as f:
     config = json.load(f)
 
-with open(keys_path, 'r') as f:
+with open(keys_path, 'r', encoding='utf-8') as f:
     keys = json.load(f)
 
 config['api_keys']['picovoice_access_key'] = keys.get('picovoice_access_key', '')
 config['api_keys']['groq_api_key']         = keys.get('groq_api_key', '')
 config['api_keys']['gemini_api_key']       = keys.get('gemini_api_key', '')
 
-with open(config_path, 'w') as f:
+with open(config_path, 'w', encoding='utf-8') as f:
     json.dump(config, f, indent=2)
 PYEOF
 
             log "API keys written to config.json."
         else
-            log_err "Failed to decrypt keys.enc. Check passphrase file and keys.enc integrity."
+            # Securely clean up the (possibly partial) temp file before aborting.
+            python3 -c "
+import os, sys
+path = sys.argv[1]
+try:
+    size = os.path.getsize(path)
+    with open(path, 'r+b') as f:
+        f.write(b'0' * size)
+    os.remove(path)
+except Exception:
+    pass
+" "$DECRYPTED_JSON" 2>/dev/null || rm -f "$DECRYPTED_JSON"
+            log_err "Failed to decrypt keys.enc. Cannot start without API keys."
+            log_err "Check passphrase file ($PASSPHRASE_FILE) and keys.enc integrity."
+            exit 1
         fi
 
-        # Securely delete the temp decrypted file regardless of outcome
+        # Securely delete the temp decrypted file after successful merge
         python3 -c "
 import os, sys
 path = sys.argv[1]

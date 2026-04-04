@@ -91,40 +91,62 @@ done
 # ---------------------------------------------------------------------------
 log "Installing Python packages..."
 
-PIP_PACKAGES=(
-    "pvporcupine==3.0.2"
-    "pyaudio==0.2.14"
-    "groq==0.9.0"
-    "google-generativeai==0.7.0"
-    "gTTS==2.5.1"
-    "pyttsx3==2.90"
-    "pygame==2.6.0"
-    "PyQt6==6.7.0"
-    "rapidfuzz==3.9.0"
-    "requests==2.32.0"
+# Single source of truth for package versions is requirements.txt in the repo.
+REQUIREMENTS="$CLONE_DIR/requirements.txt"
+if [[ ! -f "$REQUIREMENTS" ]]; then
+    log_err "requirements.txt not found at $REQUIREMENTS"
+    exit 1
+fi
+
+# Map from pip distribution name (lower-case, normalised) to Python import name.
+# Only entries that differ between the two need to be listed here.
+declare -A IMPORT_OVERRIDE=(
+    ["google-generativeai"]="google.generativeai"
+    ["gtts"]="gtts"
+    ["pyqt6"]="PyQt6"
 )
 
-for pkg in "${PIP_PACKAGES[@]}"; do
-    pkg_name="${pkg%%==*}"
-    if python3 -c "import importlib; importlib.import_module('${pkg_name//-/_}')" 2>/dev/null; then
-        log "  [OK] $pkg_name already installed"
+_import_name_for() {
+    # $1 = distribution name (e.g. "google-generativeai")
+    local dist_lower
+    dist_lower=$(echo "$1" | tr '[:upper:]' '[:lower:]' | tr '-' '_')
+    if [[ -v "IMPORT_OVERRIDE[$(echo "$1" | tr '[:upper:]' '[:lower:]')]" ]]; then
+        echo "${IMPORT_OVERRIDE[$(echo "$1" | tr '[:upper:]' '[:lower:]')]}"
     else
-        log "  Installing $pkg ..."
-        pip3 install --break-system-packages -q "$pkg" 2>&1 | tail -1 || \
-            log_err "Failed to install $pkg (continuing)"
+        echo "$dist_lower"
     fi
-done
+}
+
+while IFS= read -r line || [[ -n "$line" ]]; do
+    # Skip blank lines and comments
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    [[ -z "${line// }" ]] && continue
+
+    pkg_spec="$line"
+    # Strip version specifier to get the distribution name
+    dist_name="${pkg_spec%%[=><!\[]*}"
+    import_name=$(_import_name_for "$dist_name")
+
+    if python3 -c "import $import_name" 2>/dev/null; then
+        log "  [OK] $import_name already installed"
+    else
+        log "  Installing $pkg_spec ..."
+        pip3 install --break-system-packages -q "$pkg_spec" 2>&1 | tail -1 || \
+            log_err "Failed to install $pkg_spec (continuing)"
+    fi
+done < "$REQUIREMENTS"
 
 # ---------------------------------------------------------------------------
 # Copy application code from clone to USB stick
 # ---------------------------------------------------------------------------
 log "Copying application code to USB stick..."
 
-# Preserve config/, data/, logs/, wake_words/ — only update app/ and scripts/
+# Preserve config/, data/, logs/, wake_words/ — only update runtime code/assets.
 rsync -a --delete \
     "$CLONE_DIR/app/"       "$USB_ROOT/app/"       2>>"$LOG_FILE"
 rsync -a --delete \
     "$CLONE_DIR/scripts/"   "$USB_ROOT/scripts/"   2>>"$LOG_FILE"
+cp "$CLONE_DIR/requirements.txt" "$USB_ROOT/requirements.txt"
 
 # Copy keys.enc if present in the repo (it may not be on fresh clones)
 if [[ -f "$CLONE_DIR/keys.enc" ]]; then

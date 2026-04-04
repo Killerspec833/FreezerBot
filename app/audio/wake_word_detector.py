@@ -109,7 +109,12 @@ class WakeWordDetector(QThread):
                     self._resume_event.wait()       # sleep until resume()
                     if self.isInterruptionRequested():
                         break
-                    stream.start_stream()
+                    # Only restart the stream if we are genuinely resumed.
+                    # A second pause() could arrive between wait() returning
+                    # and this point, so recheck the flag.
+                    if not self._paused:
+                        stream.start_stream()
+                    continue   # re-evaluate pause state at the top of the loop
 
                 pcm_bytes = stream.read(
                     porcupine.frame_length, exception_on_overflow=False

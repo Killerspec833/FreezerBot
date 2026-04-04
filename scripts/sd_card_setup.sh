@@ -81,24 +81,26 @@ done
 # ---------------------------------------------------------------------------
 section "Installing Python packages"
 
-PIP_PACKAGES=(
-    "pvporcupine==3.0.2"
-    "pyaudio==0.2.14"
-    "groq==0.9.0"
-    "google-generativeai==0.7.0"
-    "gTTS==2.5.1"
-    "pyttsx3==2.90"
-    "pygame==2.6.0"
-    "PyQt6==6.7.0"
-    "rapidfuzz==3.9.0"
-    "requests==2.32.0"
-)
+# Single source of truth for package versions: requirements.txt in the same
+# directory as this script (which lives in scripts/ inside the repo or USB stick).
+REQUIREMENTS="$(cd "$(dirname "$0")/.." && pwd)/requirements.txt"
 
-for pkg in "${PIP_PACKAGES[@]}"; do
-    log "  Installing $pkg ..."
-    pip3 install --break-system-packages -q "$pkg" 2>>"$LOGFILE" || \
-        log_err "  Failed to install $pkg (non-fatal)"
-done
+if [[ ! -f "$REQUIREMENTS" ]]; then
+    log_err "requirements.txt not found at $REQUIREMENTS — cannot install Python packages."
+    exit 1
+fi
+
+log "Reading packages from $REQUIREMENTS"
+
+while IFS= read -r line || [[ -n "$line" ]]; do
+    # Skip blank lines and comments
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    [[ -z "${line// }" ]] && continue
+
+    log "  Installing $line ..."
+    pip3 install --break-system-packages -q "$line" 2>>"$LOGFILE" || \
+        log_err "  Failed to install $line (non-fatal)"
+done < "$REQUIREMENTS"
 
 # ---------------------------------------------------------------------------
 # 4. Display: portrait rotation

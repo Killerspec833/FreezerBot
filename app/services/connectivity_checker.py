@@ -34,10 +34,9 @@ class ConnectivityChecker:
         port = self._cfg.network.connectivity_check_port
         timeout = self._cfg.network.connectivity_check_timeout_seconds
         try:
-            socket.setdefaulttimeout(timeout)
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.connect((host, port))
-            sock.close()
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(timeout)
+                sock.connect((host, port))
             log.debug("WiFi check passed.")
             return CheckResult(ok=True, message="Internet connected")
         except OSError as e:

@@ -11,6 +11,7 @@ from typing import Optional
 
 _root_logger_name = "freezerbot"
 _configured = False
+_fallback_configured = False
 
 
 def setup_logger(
@@ -58,9 +59,12 @@ def get_logger(name: Optional[str] = None) -> logging.Logger:
         log = get_logger(__name__)
         log.info("started")
     """
-    if not _configured:
-        # Fallback: console-only logger so imports don't crash before setup_logger()
+    global _fallback_configured
+    if not _configured and not _fallback_configured:
+        # Fallback: console-only logger so imports don't crash before setup_logger().
+        # Called at most once to avoid repeated basicConfig side effects.
         logging.basicConfig(level=logging.DEBUG)
+        _fallback_configured = True
 
     if name:
         # Strip leading 'app.' for cleaner log names
