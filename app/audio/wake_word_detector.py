@@ -79,7 +79,7 @@ class WakeWordDetector(QThread):
         import pyaudio
         from openwakeword.model import Model
 
-        oww = Model(wakeword_models=[self._model_name], inference_framework="onnx")
+        oww = Model(wakeword_model_paths=[])  # load all bundled pre-trained models
         pa = pyaudio.PyAudio()
 
         SAMPLE_RATE  = 16000
