@@ -155,13 +155,20 @@ class AppController(QObject):
     # ------------------------------------------------------------------
 
     def on_wake_word_detected(self) -> None:
-        self.reset_inactivity_timer()
-        # Guard against burst detections and TTS echo triggering the detector.
+        # Set the guard FIRST — before any signal emissions (state_changed from
+        # sm.transition can dispatch queued signals via a nested event loop,
+        # and we need _recording_active = True to already be visible at that point).
         if self._recording_active:
             return
+        self._recording_active = True
+        self.reset_inactivity_timer()
         if self._sm.current in (AppState.SLEEP, AppState.INVENTORY):
             if self._sm.transition(AppState.LISTENING):
                 self._start_recording()
+            else:
+                self._recording_active = False  # transition failed, revert
+        else:
+            self._recording_active = False  # wrong state, revert
 
     # ------------------------------------------------------------------
     # Recording
@@ -169,7 +176,6 @@ class AppController(QObject):
 
     def _start_recording(self) -> None:
         """Pause wake word detector, open recorder."""
-        self._recording_active = True
         if self._wake_detector:
             self._wake_detector.pause()
 
@@ -213,6 +219,7 @@ class AppController(QObject):
         self._recording_active = False
         if self._sm.current == AppState.LISTENING:
             # Re-listen: start recording immediately without requiring wake word.
+            self._recording_active = True
             self._start_recording()
         else:
             # All other states: just ungate the wake word detector.
