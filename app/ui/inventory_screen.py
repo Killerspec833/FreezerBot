@@ -124,8 +124,17 @@ class InventoryScreen(QWidget):
 
         layout.addSpacing(PADDING)
 
-        # Close button
-        self._close_btn = QPushButton("Close")
+        # Voice hint
+        hint = QLabel("Say \"Hey Jarvis, done\" when ready")
+        hint.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        hint_font = QFont()
+        hint_font.setPointSize(FONT_SMALL)
+        hint.setFont(hint_font)
+        hint.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; padding-bottom: 4px;")
+        layout.addWidget(hint)
+
+        # Done button
+        self._close_btn = QPushButton("Done")
         self._close_btn.setStyleSheet(STYLE_NEUTRAL_BUTTON)
         self._close_btn.setContentsMargins(MARGIN, 0, MARGIN, 0)
         self._close_btn.clicked.connect(self.close_requested)

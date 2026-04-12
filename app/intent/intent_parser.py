@@ -57,7 +57,7 @@ Rules:
 - For QUERY: item_name is required. location is optional filter.
 - For LIST: location is required. item_name is null.
 - For CONFIRM: all fields except intent are null. Examples: "yes", "correct", "that's right", "yep", "sure".
-- For DENY: all fields except intent are null. Examples: "no", "wrong", "cancel", "nope", "start over".
+- For DENY: all fields except intent are null. Examples: "no", "wrong", "cancel", "nope", "start over", "done", "finished", "close", "go back", "exit", "I'm done".
 - UNKNOWN: use when the command is unintelligible or clearly not inventory-related.
 - If quantity is not stated for ADD, set quantity to "1".
 - The "notes" field is for your internal observations only. It is never shown to the user.
@@ -82,6 +82,12 @@ Output: {"intent":"CONFIRM","item_name":null,"quantity":null,"location":null,"co
 
 Input: "No that's wrong"
 Output: {"intent":"DENY","item_name":null,"quantity":null,"location":null,"confidence":0.92,"notes":null}
+
+Input: "Done"
+Output: {"intent":"DENY","item_name":null,"quantity":null,"location":null,"confidence":0.97,"notes":null}
+
+Input: "I'm finished"
+Output: {"intent":"DENY","item_name":null,"quantity":null,"location":null,"confidence":0.95,"notes":null}
 """
 
 

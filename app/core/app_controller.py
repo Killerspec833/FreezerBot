@@ -275,6 +275,11 @@ class AppController(QObject):
                 self._on_denied()
                 return
 
+        # --- Voice DENY ("done") while viewing inventory ---
+        if self._sm.current == AppState.INVENTORY and intent_type == IntentType.DENY:
+            self._sm.force(AppState.SLEEP)
+            return
+
         if intent_type == IntentType.ADD:
             self._pending_intent = parsed_intent
             loc_display = self._cfg.get_location_display_name(
