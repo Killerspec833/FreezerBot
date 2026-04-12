@@ -3,7 +3,7 @@ IntentParser — converts a Whisper transcript into a ParsedIntent.
 
 Flow:
   1. Build prompt (system + user message)
-  2. POST to Gemini API (gemini-2.0-flash, temp=0.1)
+  2. POST to Groq API (llama-3.3-70b-versatile, temp=0.1)
   3. Parse JSON response → ParsedIntent
   4. Resolve location alias via LocationResolver
   5. On parse failure: retry once, then return UNKNOWN
@@ -96,10 +96,10 @@ class IntentParser:
 
     def parse(self, transcript: str) -> ParsedIntent:
         """Parse transcript → ParsedIntent. Retries once on JSON failure."""
-        raw_json = self._call_gemini(transcript)
+        raw_json = self._call_groq(transcript)
 
         if raw_json is None:
-            log.warning("Gemini call failed — returning UNKNOWN.")
+            log.warning("Groq call failed — returning UNKNOWN.")
             return ParsedIntent(
                 intent_type=IntentType.UNKNOWN,
                 raw_transcript=transcript,
@@ -108,22 +108,22 @@ class IntentParser:
         intent = self._parse_json(raw_json, transcript)
         if intent is None:
             # Retry once with a stricter prompt
-            log.info("JSON parse failed — retrying Gemini call.")
-            raw_json2 = self._call_gemini(transcript, retry=True)
+            log.info("JSON parse failed — retrying Groq call.")
+            raw_json2 = self._call_groq(transcript, retry=True)
             if raw_json2:
                 intent = self._parse_json(raw_json2, transcript)
 
         if intent is None:
-            log.warning("Could not parse Gemini response — returning UNKNOWN.")
+            log.warning("Could not parse Groq response — returning UNKNOWN.")
             return ParsedIntent(
                 intent_type=IntentType.UNKNOWN,
                 raw_transcript=transcript,
             )
 
-        # Resolve location alias (Gemini usually does this, but verify)
+        # Resolve location alias if needed
         if intent.location is not None:
             resolved = self._resolver.resolve(intent.location)
-            intent.location = resolved  # may become None if truly unresolvable
+            intent.location = resolved
 
         log.info(
             "Intent: %s  item='%s'  qty='%s'  loc='%s'  conf=%.2f",
@@ -136,22 +136,14 @@ class IntentParser:
         return intent
 
     # ------------------------------------------------------------------
-    # Gemini API call
+    # Groq API call
     # ------------------------------------------------------------------
 
-    def _call_gemini(self, transcript: str, retry: bool = False) -> Optional[str]:
+    def _call_groq(self, transcript: str, retry: bool = False) -> Optional[str]:
         try:
-            import google.generativeai as genai
+            from groq import Groq
 
-            genai.configure(api_key=self._cfg.config.api_keys.gemini_api_key)
-            model = genai.GenerativeModel(
-                model_name="gemini-2.0-flash",
-                system_instruction=_SYSTEM_PROMPT,
-                generation_config={
-                    "temperature": 0.1,
-                    "max_output_tokens": 256,
-                },
-            )
+            client = Groq(api_key=self._cfg.config.api_keys.groq_api_key)
 
             user_msg = f'Voice command transcript: "{transcript}"'
             if retry:
@@ -160,13 +152,21 @@ class IntentParser:
                     "No markdown, no explanation, no code fences."
                 )
 
-            response = model.generate_content(user_msg)
-            raw = response.text.strip()
-            log.debug("Gemini raw response: %s", raw)
+            response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "user",   "content": user_msg},
+                ],
+                temperature=0.1,
+                max_tokens=256,
+            )
+            raw = response.choices[0].message.content.strip()
+            log.debug("Groq raw response: %s", raw)
             return raw
 
         except Exception as e:
-            log.error("Gemini API error: %s", e)
+            log.error("Groq intent API error: %s", e)
             return None
 
     # ------------------------------------------------------------------
@@ -176,7 +176,7 @@ class IntentParser:
     def _parse_json(
         self, raw: str, transcript: str
     ) -> Optional[ParsedIntent]:
-        # Strip markdown code fences if Gemini ignored the instruction
+        # Strip markdown code fences if the model ignored the instruction
         cleaned = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.IGNORECASE)
         cleaned = re.sub(r"\s*```$", "", cleaned)
         cleaned = cleaned.strip()
@@ -191,7 +191,7 @@ class IntentParser:
         try:
             intent_type = IntentType[intent_str]
         except KeyError:
-            log.warning("Unknown intent value from Gemini: '%s'", intent_str)
+            log.warning("Unknown intent value from model: '%s'", intent_str)
             intent_type = IntentType.UNKNOWN
 
         return ParsedIntent(
