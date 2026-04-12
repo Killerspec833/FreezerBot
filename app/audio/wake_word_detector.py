@@ -134,15 +134,14 @@ class WakeWordDetector(QThread):
 
         try:
             while not self.isInterruptionRequested():
-                # Block here while paused (mic yielded to recorder)
+                # Block here while paused.
+                # We go through PulseAudio ("default") which supports multiple
+                # simultaneous clients, so we don't need to close the stream —
+                # just stop reading until the recorder is done.
                 if self._paused:
-                    stream.stop_stream()
-                    stream.close()                  # fully release ALSA device
                     self._resume_event.wait()       # sleep until resume()
                     if self.isInterruptionRequested():
                         break
-                    if not self._paused:
-                        stream = pa.open(**open_kwargs)  # reacquire device
                     continue
 
                 pcm_bytes = stream.read(native_frames, exception_on_overflow=False)
