@@ -214,6 +214,17 @@ if ! grep -q "allowed_users=anybody" "$XWRAPPER" 2>/dev/null; then
 fi
 
 # ---------------------------------------------------------------------------
+# Auto-mount USB stick via /etc/fstab
+# ---------------------------------------------------------------------------
+FSTAB="/etc/fstab"
+if ! grep -q "FREEZERBOT" "$FSTAB" 2>/dev/null; then
+    log "Adding FREEZERBOT USB auto-mount to /etc/fstab..."
+    sudo mkdir -p /media/pi/FREEZERBOT
+    echo "LABEL=FREEZERBOT /media/pi/FREEZERBOT vfat defaults,nofail,uid=1000,gid=1000 0 0" | sudo tee -a "$FSTAB" > /dev/null
+    log "  fstab entry added."
+fi
+
+# ---------------------------------------------------------------------------
 # Mark installation complete
 # ---------------------------------------------------------------------------
 date > "$USB_ROOT/.install_complete"
