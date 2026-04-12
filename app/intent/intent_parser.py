@@ -3,7 +3,7 @@ IntentParser — converts a Whisper transcript into a ParsedIntent.
 
 Flow:
   1. Build prompt (system + user message)
-  2. POST to Gemini API (gemini-1.5-flash, temp=0.1)
+  2. POST to Gemini API (gemini-2.0-flash, temp=0.1)
   3. Parse JSON response → ParsedIntent
   4. Resolve location alias via LocationResolver
   5. On parse failure: retry once, then return UNKNOWN
@@ -145,7 +145,7 @@ class IntentParser:
 
             genai.configure(api_key=self._cfg.config.api_keys.gemini_api_key)
             model = genai.GenerativeModel(
-                model_name="gemini-1.5-flash",
+                model_name="gemini-2.0-flash",
                 system_instruction=_SYSTEM_PROMPT,
                 generation_config={
                     "temperature": 0.1,
