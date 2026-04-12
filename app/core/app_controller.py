@@ -68,8 +68,13 @@ class AppController(QObject):
         self._stt_thread:    STTThread | None = None
         self._intent_thread: IntentParserThread | None = None
 
+        # Guard against burst wake word detections (flag set before recorder
+        # thread is running, cleared when recording/TTS is fully done).
+        self._recording_active = False
+
         # --- TTS engine (always running) ---
         self._tts = TTSEngine(parent=self)
+        self._tts.speaking_finished.connect(self._on_tts_finished)
         self._tts.start()
 
         self._connect_ui_signals()
@@ -151,8 +156,8 @@ class AppController(QObject):
 
     def on_wake_word_detected(self) -> None:
         self.reset_inactivity_timer()
-        # Guard against burst detections: ignore if already recording.
-        if self._recorder and self._recorder.isRunning():
+        # Guard against burst detections and TTS echo triggering the detector.
+        if self._recording_active:
             return
         if self._sm.current in (AppState.SLEEP, AppState.INVENTORY):
             if self._sm.transition(AppState.LISTENING):
@@ -164,6 +169,7 @@ class AppController(QObject):
 
     def _start_recording(self) -> None:
         """Pause wake word detector, open recorder."""
+        self._recording_active = True
         if self._wake_detector:
             self._wake_detector.pause()
 
@@ -179,9 +185,7 @@ class AppController(QObject):
         log.debug("Recorder started.")
 
     def _on_recording_complete(self, wav_bytes: bytes) -> None:
-        if self._wake_detector:
-            self._wake_detector.resume()
-
+        # Keep detector paused until TTS finishes — resumed in _on_tts_finished.
         self._win.listening_screen.set_status("Transcribing…")
         self._stt_thread = STTThread(
             wav_bytes=wav_bytes,
@@ -194,10 +198,26 @@ class AppController(QObject):
 
     def _on_recording_failed(self, reason: str) -> None:
         log.warning("Recording failed: %s", reason)
-        if self._wake_detector:
-            self._wake_detector.resume()
         self._tts.speak("I didn't catch that. Please try again.")
         self._sm.transition(AppState.SLEEP)
+        # _recording_active stays True until TTS finishes (_on_tts_finished)
+
+    def _on_tts_finished(self) -> None:
+        """Called when TTS finishes speaking.
+
+        Resumes the wake word detector (prevents speaker echo triggering it).
+        If the app is in LISTENING state (e.g. after an unknown intent or deny),
+        automatically starts a new recording cycle so the user doesn't have to
+        say the wake word again.
+        """
+        self._recording_active = False
+        if self._sm.current == AppState.LISTENING:
+            # Re-listen: start recording immediately without requiring wake word.
+            self._start_recording()
+        else:
+            # All other states: just ungate the wake word detector.
+            if self._wake_detector:
+                self._wake_detector.resume()
 
     # ------------------------------------------------------------------
     # Speech-to-text
@@ -328,10 +348,9 @@ class AppController(QObject):
             self._sm.transition(AppState.INVENTORY)
 
         elif intent_type == IntentType.UNKNOWN:
-            log.warning("Unknown intent — re-listening.")
-            self._tts.speak("Sorry, I didn't understand. Please try again.")
+            log.warning("Unknown intent — re-listening after TTS.")
             self._sm.transition(AppState.LISTENING)
-            self._start_recording()
+            self._tts.speak("Sorry, I didn't understand. Please try again.")
 
     # ------------------------------------------------------------------
     # Confirmation
@@ -346,12 +365,11 @@ class AppController(QObject):
         self._sm.transition(AppState.SLEEP)
 
     def _on_denied(self) -> None:
-        log.info("User denied — re-listening.")
+        log.info("User denied — re-listening after TTS.")
         self.reset_inactivity_timer()
         self._pending_intent = None
-        self._tts.speak("Let's try again. Listening.")
         self._sm.transition(AppState.LISTENING)
-        self._start_recording()
+        self._tts.speak("Let's try again. Listening.")
 
     def _execute_intent(self, intent) -> None:
         intent_type = intent.intent_type.name
