@@ -155,20 +155,25 @@ class AppController(QObject):
     # ------------------------------------------------------------------
 
     def on_wake_word_detected(self) -> None:
-        # Set the guard FIRST — before any signal emissions (state_changed from
-        # sm.transition can dispatch queued signals via a nested event loop,
-        # and we need _recording_active = True to already be visible at that point).
         if self._recording_active:
             return
         self._recording_active = True
+        # Block the detector from emitting further wake_word_detected signals
+        # while we process this one. Unblocked in _on_tts_finished.
+        if self._wake_detector:
+            self._wake_detector.blockSignals(True)
         self.reset_inactivity_timer()
         if self._sm.current in (AppState.SLEEP, AppState.INVENTORY):
             if self._sm.transition(AppState.LISTENING):
                 self._start_recording()
             else:
-                self._recording_active = False  # transition failed, revert
+                self._recording_active = False
+                if self._wake_detector:
+                    self._wake_detector.blockSignals(False)
         else:
-            self._recording_active = False  # wrong state, revert
+            self._recording_active = False
+            if self._wake_detector:
+                self._wake_detector.blockSignals(False)
 
     # ------------------------------------------------------------------
     # Recording
@@ -217,13 +222,15 @@ class AppController(QObject):
         say the wake word again.
         """
         self._recording_active = False
-        if self._sm.current == AppState.LISTENING:
-            # Re-listen: start recording immediately without requiring wake word.
+        if self._sm.current in (AppState.LISTENING, AppState.CONFIRMING):
+            # Re-listen (unknown intent) or wait for voice yes/no (confirming).
+            # Start recording immediately — no wake word required.
             self._recording_active = True
             self._start_recording()
         else:
-            # All other states: just ungate the wake word detector.
+            # All other states: unblock and resume the wake word detector.
             if self._wake_detector:
+                self._wake_detector.blockSignals(False)
                 self._wake_detector.resume()
 
     # ------------------------------------------------------------------
