@@ -96,7 +96,7 @@ done < "$REQUIREMENTS"
 # ---------------------------------------------------------------------------
 # USB stick directories
 # ---------------------------------------------------------------------------
-for dir in app config data logs wake_words; do
+for dir in app config data logs; do
     full="$USB_ROOT/$dir"
     if [[ -d "$full" ]]; then
         ok "Directory: $dir/"

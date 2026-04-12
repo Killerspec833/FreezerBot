@@ -21,7 +21,7 @@ from app.audio.speech_to_text import STTThread
 from app.audio.tts_engine import TTSEngine
 from app.audio.wake_word_detector import WakeWordDetector
 from app.core.config_manager import ConfigManager
-from app.core.path_resolver import get_db_path, get_wake_word_path
+from app.core.path_resolver import get_db_path
 from app.core.state_machine import AppState, StateMachine
 from app.database.db_manager import DatabaseManager
 from app.database.fuzzy_search import FuzzySearch
@@ -87,24 +87,12 @@ class AppController(QObject):
     def _start_audio(self) -> None:
         """Initialise and start the wake word detector."""
         cfg = self._cfg.config
-        ppn_filename = cfg.wake_word_ppn_filename
-        if not ppn_filename:
-            log.warning("No wake word .ppn filename configured — audio disabled.")
-            return
-
-        try:
-            ppn_path = get_wake_word_path(ppn_filename)
-        except RuntimeError as e:
-            log.error("Cannot resolve wake word path: %s", e)
-            return
-
-        if not os.path.isfile(ppn_path):
-            log.error("Wake word file not found: %s", ppn_path)
+        if not cfg.wake_word_model:
+            log.warning("No wake word model configured — audio disabled.")
             return
 
         self._wake_detector = WakeWordDetector(
-            ppn_path=ppn_path,
-            access_key=cfg.api_keys.picovoice_access_key,
+            model_name=cfg.wake_word_model,
             device_index=cfg.audio.input_device_index,
             parent=self,
         )

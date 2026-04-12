@@ -108,7 +108,6 @@ try:
         cfg = json.load(fh)
     keys = cfg.get('api_keys', {})
     all_set = all([
-        keys.get('picovoice_access_key'),
         keys.get('groq_api_key'),
         keys.get('gemini_api_key'),
     ])
@@ -139,9 +138,8 @@ with open(config_path, 'r', encoding='utf-8') as f:
 with open(keys_path, 'r', encoding='utf-8') as f:
     keys = json.load(f)
 
-config['api_keys']['picovoice_access_key'] = keys.get('picovoice_access_key', '')
-config['api_keys']['groq_api_key']         = keys.get('groq_api_key', '')
-config['api_keys']['gemini_api_key']       = keys.get('gemini_api_key', '')
+config['api_keys']['groq_api_key']   = keys.get('groq_api_key', '')
+config['api_keys']['gemini_api_key'] = keys.get('gemini_api_key', '')
 
 with open(config_path, 'w', encoding='utf-8') as f:
     json.dump(config, f, indent=2)

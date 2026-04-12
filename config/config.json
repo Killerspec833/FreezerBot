@@ -1,9 +1,8 @@
 {
   "setup_complete": false,
   "wake_word": "",
-  "wake_word_ppn_filename": "",
+  "wake_word_model": "",
   "api_keys": {
-    "picovoice_access_key": "",
     "groq_api_key": "",
     "gemini_api_key": ""
   },

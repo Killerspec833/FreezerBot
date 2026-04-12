@@ -18,7 +18,6 @@ from app.core.path_resolver import get_config_path
 
 @dataclass
 class ApiKeys:
-    picovoice_access_key: str = ""
     groq_api_key: str = ""
     gemini_api_key: str = ""
 
@@ -70,7 +69,7 @@ class FuzzySearchConfig:
 class AppConfig:
     setup_complete: bool = False
     wake_word: str = ""
-    wake_word_ppn_filename: str = ""
+    wake_word_model: str = ""
     api_keys: ApiKeys = field(default_factory=ApiKeys)
     locations: dict = field(default_factory=dict)
     audio: AudioConfig = field(default_factory=AudioConfig)
@@ -138,17 +137,15 @@ class ConfigManager:
         self._config.setup_complete = value
         self.save()
 
-    def set_wake_word(self, wake_word: str, ppn_filename: str) -> None:
+    def set_wake_word(self, wake_word: str, model_name: str) -> None:
         self._config.wake_word = wake_word
-        self._config.wake_word_ppn_filename = ppn_filename
+        self._config.wake_word_model = model_name
         self.save()
 
     def validate_api_keys(self) -> list[str]:
         """Return list of missing key names. Empty list = all present."""
         missing = []
         keys = self._config.api_keys
-        if not keys.picovoice_access_key:
-            missing.append("picovoice_access_key")
         if not keys.groq_api_key:
             missing.append("groq_api_key")
         if not keys.gemini_api_key:
@@ -174,11 +171,10 @@ class ConfigManager:
 
         c.setup_complete = r.get("setup_complete", False)
         c.wake_word = r.get("wake_word", "")
-        c.wake_word_ppn_filename = r.get("wake_word_ppn_filename", "")
+        c.wake_word_model = r.get("wake_word_model", "")
 
         keys = r.get("api_keys", {})
         c.api_keys = ApiKeys(
-            picovoice_access_key=keys.get("picovoice_access_key", ""),
             groq_api_key=keys.get("groq_api_key", ""),
             gemini_api_key=keys.get("gemini_api_key", ""),
         )
@@ -233,9 +229,8 @@ class ConfigManager:
         return {
             "setup_complete": c.setup_complete,
             "wake_word": c.wake_word,
-            "wake_word_ppn_filename": c.wake_word_ppn_filename,
+            "wake_word_model": c.wake_word_model,
             "api_keys": {
-                "picovoice_access_key": c.api_keys.picovoice_access_key,
                 "groq_api_key": c.api_keys.groq_api_key,
                 "gemini_api_key": c.api_keys.gemini_api_key,
             },

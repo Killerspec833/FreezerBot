@@ -3,13 +3,13 @@ SetupWizard — first-boot configuration flow.
 
 Steps:
   0  Welcome
-  1  Wake word selection (touch list, 18 options)
+  1  Wake word selection (touch list, 4 options)
   2  Storage locations review (read-only)
-  3  System check (auto: WiFi, API keys, .ppn file)
+  3  System check (auto: WiFi, wake word engine, API keys)
   4  Complete
 
 Emits setup_complete(dict) with:
-  { "wake_word": str, "wake_word_ppn_filename": str }
+  { "wake_word": str, "wake_word_model": str }
 """
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
@@ -28,7 +28,6 @@ from PyQt6.QtWidgets import (
 )
 
 from app.core.config_manager import ConfigManager
-from app.core.path_resolver import get_wake_words_dir
 from app.core.theme import (
     COLOR_BACKGROUND,
     COLOR_BORDER,
@@ -53,24 +52,10 @@ log = get_logger(__name__)
 # Each entry: (display_name, ppn_filename)
 # ---------------------------------------------------------------------------
 WAKE_WORDS: list[tuple[str, str]] = [
-    ("Computer",     "Computer_en_raspberry-pi_v3_0_0.ppn"),
-    ("Hey Computer", "Hey-Computer_en_raspberry-pi_v3_0_0.ppn"),
-    ("Jarvis",       "Jarvis_en_raspberry-pi_v3_0_0.ppn"),
-    ("Hey Jarvis",   "Hey-Jarvis_en_raspberry-pi_v3_0_0.ppn"),
-    ("Blink",        "Blink_en_raspberry-pi_v3_0_0.ppn"),
-    ("Hey Blink",    "Hey-Blink_en_raspberry-pi_v3_0_0.ppn"),
-    ("Polar",        "Polar_en_raspberry-pi_v3_0_0.ppn"),
-    ("Hey Polar",    "Hey-Polar_en_raspberry-pi_v3_0_0.ppn"),
-    ("Kelvin",       "Kelvin_en_raspberry-pi_v3_0_0.ppn"),
-    ("Hey Kelvin",   "Hey-Kelvin_en_raspberry-pi_v3_0_0.ppn"),
-    ("Frost",        "Frost_en_raspberry-pi_v3_0_0.ppn"),
-    ("Hey Frost",    "Hey-Frost_en_raspberry-pi_v3_0_0.ppn"),
-    ("Cryo",         "Cryo_en_raspberry-pi_v3_0_0.ppn"),
-    ("Hey Cryo",     "Hey-Cryo_en_raspberry-pi_v3_0_0.ppn"),
-    ("Tundra",       "Tundra_en_raspberry-pi_v3_0_0.ppn"),
-    ("Hey Tundra",   "Hey-Tundra_en_raspberry-pi_v3_0_0.ppn"),
-    ("Ivan",         "Ivan_en_raspberry-pi_v3_0_0.ppn"),
-    ("Hey Ivan",     "Hey-Ivan_en_raspberry-pi_v3_0_0.ppn"),
+    ("Hey Jarvis",  "hey_jarvis"),
+    ("Alexa",       "alexa"),
+    ("Hey Mycroft", "hey_mycroft"),
+    ("Hey Rhasspy", "hey_rhasspy"),
 ]
 
 
@@ -81,16 +66,14 @@ WAKE_WORDS: list[tuple[str, str]] = [
 class _CheckThread(QThread):
     results_ready = pyqtSignal(dict)
 
-    def __init__(self, cfg, ppn_filename: str, wake_words_dir: str):
+    def __init__(self, cfg):
         super().__init__()
         self._cfg = cfg
-        self._ppn = ppn_filename
-        self._dir = wake_words_dir
 
     def run(self) -> None:
         from app.services.connectivity_checker import ConnectivityChecker
         checker = ConnectivityChecker(self._cfg)
-        results = checker.run_all(self._ppn, self._dir)
+        results = checker.run_all()
         self.results_ready.emit(results)
 
 
@@ -365,11 +348,10 @@ class _LocationsStep(QWidget):
 # ---------------------------------------------------------------------------
 
 _CHECK_LABELS = {
-    "wifi":      "Internet connection",
-    "picovoice": "Picovoice API key",
-    "groq":      "Groq API key",
-    "gemini":    "Gemini API key",
-    "ppn_file":  "Wake word file",
+    "wifi":       "Internet connection",
+    "wake_word":  "Wake word engine",
+    "groq":       "Groq API key",
+    "gemini":     "Gemini API key",
 }
 
 
@@ -381,15 +363,15 @@ class _SystemCheckStep(QWidget):
         super().__init__(parent)
         self.setStyleSheet(f"background-color: {COLOR_BACKGROUND};")
         self._cfg = cfg_manager
-        self._ppn_filename: str = ""
+        self._model_name: str = ""
         self._thread: _CheckThread | None = None
         self._next_btn: QPushButton | None = None
         self._retry_btn: QPushButton | None = None
         self._row_labels: dict[str, QLabel] = {}
         self._build()
 
-    def set_ppn_filename(self, filename: str) -> None:
-        self._ppn_filename = filename
+    def set_model_name(self, model_name: str) -> None:
+        self._model_name = model_name
 
     def on_show(self) -> None:
         self._run_checks()
@@ -464,16 +446,7 @@ class _SystemCheckStep(QWidget):
             lbl.setText("checking…")
             lbl.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; border: none;")
 
-        try:
-            wake_words_dir = get_wake_words_dir()
-        except RuntimeError:
-            wake_words_dir = ""
-
-        self._thread = _CheckThread(
-            self._cfg.config,
-            self._ppn_filename,
-            wake_words_dir,
-        )
+        self._thread = _CheckThread(self._cfg.config)
         self._thread.results_ready.connect(self._on_results)
         self._thread.start()
 
@@ -654,8 +627,8 @@ class SetupWizard(QWidget):
         selected = self._wakeword.selected
         if not selected:
             return
-        display, ppn = selected
-        self._syscheck.set_ppn_filename(ppn)
+        display, model_name = selected
+        self._syscheck.set_model_name(model_name)
         self._complete.set_wake_word(display)
         self._go_to(self._STEP_LOCATIONS)
 
@@ -664,10 +637,10 @@ class SetupWizard(QWidget):
         if not selected:
             log.error("Finish called with no wake word selected.")
             return
-        display, ppn = selected
+        display, model_name = selected
         result = {
             "wake_word": display,
-            "wake_word_ppn_filename": ppn,
+            "wake_word_model": model_name,
         }
         log.info("Setup wizard complete. Wake word: %s", display)
         self.setup_complete.emit(result)

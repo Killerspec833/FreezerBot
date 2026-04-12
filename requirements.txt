@@ -2,8 +2,11 @@
 # Install on Raspberry Pi with:
 #   pip install --break-system-packages -r requirements.txt
 
-# Wake word detection
-pvporcupine==3.0.2
+# Wake word detection (open-source, no account required)
+openwakeword
+
+# Numeric audio processing
+numpy>=1.26
 
 # Audio I/O
 pyaudio==0.2.14

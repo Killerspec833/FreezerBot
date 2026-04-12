@@ -1,7 +1,7 @@
 """
 Shared pytest fixtures.
 
-All fixtures are hardware-free: no audio, no Qt, no Porcupine, no API keys.
+All fixtures are hardware-free: no audio, no Qt, no openWakeWord, no API keys.
 FREEZERBOT_ROOT is not needed because ConfigManager and DatabaseManager
 both accept explicit paths.
 """
@@ -24,9 +24,8 @@ from app.database.fuzzy_search import FuzzySearch
 _BASE_CONFIG = {
     "setup_complete": False,
     "wake_word": "",
-    "wake_word_ppn_filename": "",
+    "wake_word_model": "",
     "api_keys": {
-        "picovoice_access_key": "",
         "groq_api_key": "",
         "gemini_api_key": "",
     },

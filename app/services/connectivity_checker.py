@@ -5,7 +5,6 @@ All checks are blocking and intended to be called from a QThread
 so the UI remains responsive.
 """
 
-import os
 import socket
 from dataclasses import dataclass
 
@@ -43,19 +42,13 @@ class ConnectivityChecker:
             log.warning("WiFi check failed: %s", e)
             return CheckResult(ok=False, message="No internet connection")
 
-    def check_picovoice_key(self) -> CheckResult:
-        key = self._cfg.api_keys.picovoice_access_key
-        if not key:
-            return CheckResult(ok=False, message="Picovoice key missing")
-        # Lightweight validation: attempt to import and init with the key.
-        # A real init needs a .ppn file; we just verify the key format/length here.
+    def check_wake_word_engine(self) -> CheckResult:
         try:
-            import pvporcupine  # noqa: F401
+            import openwakeword  # noqa: F401
+            log.debug("openWakeWord available.")
+            return CheckResult(ok=True, message="openWakeWord available")
         except ImportError:
-            return CheckResult(ok=False, message="pvporcupine not installed")
-        # Key is present and library available
-        log.debug("Picovoice key present.")
-        return CheckResult(ok=True, message="Picovoice key present")
+            return CheckResult(ok=False, message="openwakeword not installed")
 
     def check_groq_key(self) -> CheckResult:
         key = self._cfg.api_keys.groq_api_key
@@ -91,26 +84,14 @@ class ConnectivityChecker:
             log.warning("Gemini key check failed: %s", e)
             return CheckResult(ok=False, message=f"Gemini key invalid: {e}")
 
-    def check_ppn_file(self, ppn_filename: str, wake_words_dir: str) -> CheckResult:
-        path = os.path.join(wake_words_dir, ppn_filename)
-        if os.path.isfile(path):
-            log.debug("Wake word file found: %s", ppn_filename)
-            return CheckResult(ok=True, message=f"{ppn_filename} found")
-        return CheckResult(
-            ok=False,
-            message=f"Wake word file not found: {ppn_filename}\n"
-                    f"Download it from console.picovoice.ai and place it in wake_words/",
-        )
-
     # ------------------------------------------------------------------
     # Run all checks at once
     # ------------------------------------------------------------------
 
-    def run_all(self, ppn_filename: str, wake_words_dir: str) -> dict[str, CheckResult]:
+    def run_all(self) -> dict[str, CheckResult]:
         return {
-            "wifi":      self.check_wifi(),
-            "picovoice": self.check_picovoice_key(),
-            "groq":      self.check_groq_key(),
-            "gemini":    self.check_gemini_key(),
-            "ppn_file":  self.check_ppn_file(ppn_filename, wake_words_dir),
+            "wifi":       self.check_wifi(),
+            "wake_word":  self.check_wake_word_engine(),
+            "groq":       self.check_groq_key(),
+            "gemini":     self.check_gemini_key(),
         }

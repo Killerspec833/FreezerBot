@@ -1,5 +1,5 @@
 """
-WakeWordDetector — always-on Porcupine wake word detection.
+WakeWordDetector — always-on openWakeWord wake word detection.
 
 Runs in a dedicated QThread. Emits wake_word_detected when the chosen
 keyword is recognised.
@@ -9,7 +9,6 @@ Pause/resume protocol:
   don't fight over the microphone. After recording finishes it calls resume().
 """
 
-import struct
 import threading
 from typing import Optional
 
@@ -25,19 +24,19 @@ class WakeWordDetector(QThread):
 
     def __init__(
         self,
-        ppn_path: str,
-        access_key: str,
+        model_name: str,
+        threshold: float = 0.5,
         device_index: Optional[int] = None,
         parent=None,
     ):
         super().__init__(parent)
-        self._ppn_path    = ppn_path
-        self._access_key  = access_key
+        self._model_name   = model_name
+        self._threshold    = threshold
         self._device_index = device_index
 
         # Pause/resume synchronisation
-        self._paused      = False
-        self._pause_lock  = threading.Lock()
+        self._paused       = False
+        self._pause_lock   = threading.Lock()
         self._resume_event = threading.Event()
         self._resume_event.set()   # not paused initially
 
@@ -76,29 +75,30 @@ class WakeWordDetector(QThread):
             log.error("WakeWordDetector fatal error: %s", e)
 
     def _run_detection_loop(self) -> None:
-        import pvporcupine
+        import numpy as np
         import pyaudio
+        from openwakeword.model import Model
 
-        porcupine = pvporcupine.create(
-            access_key=self._access_key,
-            keyword_paths=[self._ppn_path],
-        )
+        oww = Model(wakeword_models=[self._model_name], inference_framework="onnx")
         pa = pyaudio.PyAudio()
 
+        SAMPLE_RATE  = 16000
+        FRAME_LENGTH = 1280   # 80 ms chunks — what openWakeWord expects
+
         open_kwargs = {
-            "rate":             porcupine.sample_rate,
-            "channels":         1,
-            "format":           pyaudio.paInt16,
-            "input":            True,
-            "frames_per_buffer": porcupine.frame_length,
+            "rate":              SAMPLE_RATE,
+            "channels":          1,
+            "format":            pyaudio.paInt16,
+            "input":             True,
+            "frames_per_buffer": FRAME_LENGTH,
         }
         if self._device_index is not None:
             open_kwargs["input_device_index"] = self._device_index
 
         stream = pa.open(**open_kwargs)
         log.info(
-            "WakeWordDetector running. sample_rate=%d frame_length=%d",
-            porcupine.sample_rate, porcupine.frame_length,
+            "WakeWordDetector running. model=%s threshold=%.2f",
+            self._model_name, self._threshold,
         )
 
         try:
@@ -116,15 +116,11 @@ class WakeWordDetector(QThread):
                         stream.start_stream()
                     continue   # re-evaluate pause state at the top of the loop
 
-                pcm_bytes = stream.read(
-                    porcupine.frame_length, exception_on_overflow=False
-                )
-                pcm = struct.unpack_from(
-                    f"h" * porcupine.frame_length, pcm_bytes
-                )
-                keyword_index = porcupine.process(pcm)
+                pcm_bytes = stream.read(FRAME_LENGTH, exception_on_overflow=False)
+                pcm = np.frombuffer(pcm_bytes, dtype=np.int16)
+                predictions = oww.predict(pcm)
 
-                if keyword_index >= 0:
+                if predictions.get(self._model_name, 0) >= self._threshold:
                     log.info("Wake word detected!")
                     self.wake_word_detected.emit()   # queued → main thread
 
@@ -132,5 +128,4 @@ class WakeWordDetector(QThread):
             stream.stop_stream()
             stream.close()
             pa.terminate()
-            porcupine.delete()
             log.info("WakeWordDetector stopped.")

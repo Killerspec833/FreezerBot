@@ -61,16 +61,15 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # ---------------------------------------------------------------------------
 bold "\n=== Freezerbot USB Preparation ==="
 echo ""
-echo "You will be prompted for your three API keys."
+echo "You will be prompted for your two API keys."
 echo "Keys are never stored in plain text — they are encrypted before leaving this terminal."
 echo ""
 
-read -rsp "Picovoice Access Key: " PICO_KEY; echo
-read -rsp "Groq API Key:         " GROQ_KEY; echo
-read -rsp "Gemini API Key:       " GEMINI_KEY; echo
+read -rsp "Groq API Key:   " GROQ_KEY; echo
+read -rsp "Gemini API Key: " GEMINI_KEY; echo
 
-if [[ -z "$PICO_KEY" || -z "$GROQ_KEY" || -z "$GEMINI_KEY" ]]; then
-    red "All three API keys are required."
+if [[ -z "$GROQ_KEY" || -z "$GEMINI_KEY" ]]; then
+    red "Both API keys are required."
     exit 1
 fi
 
@@ -86,13 +85,12 @@ PASSPHRASE="$(python3 -c "import secrets, string; \
 # ---------------------------------------------------------------------------
 # Pass keys via environment variables, not argv, to avoid them appearing in
 # `ps aux` / /proc/$PID/cmdline during the brief lifetime of the process.
-KEYS_JSON=$(PICO_KEY="$PICO_KEY" GROQ_KEY="$GROQ_KEY" GEMINI_KEY="$GEMINI_KEY" \
+KEYS_JSON=$(GROQ_KEY="$GROQ_KEY" GEMINI_KEY="$GEMINI_KEY" \
 python3 - <<'PYEOF'
 import json, os
 keys = {
-    'picovoice_access_key': os.environ['PICO_KEY'],
-    'groq_api_key':         os.environ['GROQ_KEY'],
-    'gemini_api_key':       os.environ['GEMINI_KEY'],
+    'groq_api_key':   os.environ['GROQ_KEY'],
+    'gemini_api_key': os.environ['GEMINI_KEY'],
 }
 print(json.dumps(keys))
 PYEOF
@@ -130,8 +128,8 @@ fi
 # ---------------------------------------------------------------------------
 # Create required USB directories
 # ---------------------------------------------------------------------------
-mkdir -p "$USB/data" "$USB/logs" "$USB/wake_words"
-green "  USB directories created: data/, logs/, wake_words/"
+mkdir -p "$USB/data" "$USB/logs"
+green "  USB directories created: data/, logs/"
 
 # ---------------------------------------------------------------------------
 # Remind user to copy bootstrap.sh and wake word files
@@ -148,11 +146,11 @@ echo ""
 echo "1. Commit keys.enc to your GitHub repo:"
 echo "     git add keys.enc && git commit -m 'Add encrypted API keys'"
 echo ""
-echo "2. Copy wake word .ppn files to:"
-echo "     $USB/wake_words/"
-echo "   (Download from console.picovoice.ai for Raspberry Pi ARM platform)"
-echo ""
-echo "3. Insert the USB stick into your Pi and power on."
+echo "2. Insert the USB stick into your Pi and power on."
 echo "   bootstrap.sh will run automatically on first boot."
+echo ""
+echo "   Note: internet is required on first boot so openWakeWord can download"
+echo "   the chosen wake word model (~5-15 MB) from HuggingFace."
+echo "   Subsequent boots use the cached model and work offline."
 echo ""
 green "USB preparation complete."

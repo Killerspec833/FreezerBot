@@ -83,9 +83,8 @@ def cfg(tmp_path):
     config = {
         "setup_complete": True,
         "wake_word": "computer",
-        "wake_word_ppn_filename": "",
+        "wake_word_model": "",
         "api_keys": {
-            "picovoice_access_key": "",
             "groq_api_key": "",
             "gemini_api_key": "",
         },
@@ -139,7 +138,7 @@ def controller(cfg, sm, tmp_db):
       - TTSEngine          — silenced
       - WakeWordDetector   — no audio hardware
       - QTimer             — so the inactivity timer doesn't fire unexpectedly
-      - get_db_path / get_wake_word_path — not needed (wake word disabled)
+      - get_db_path        — not needed (wake word model name is empty, audio disabled)
     """
     from app.core import app_controller as ac_module
 
@@ -154,7 +153,6 @@ def controller(cfg, sm, tmp_db):
         patch.object(ac_module, "TTSEngine") as MockTTS,
         patch.object(ac_module, "WakeWordDetector"),
         patch.object(ac_module, "get_db_path", return_value="/tmp/fake.db"),
-        patch.object(ac_module, "get_wake_word_path", return_value="/tmp/fake.ppn"),
     ):
         # Make DatabaseManager() return our real db instance
         MockDB.return_value = real_db

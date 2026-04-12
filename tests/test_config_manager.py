@@ -47,21 +47,20 @@ class TestSave:
         assert reloaded.is_setup_complete() is True
 
     def test_set_wake_word_persists(self, cfg, tmp_config_path):
-        cfg.set_wake_word("Jarvis", "jarvis_rpi.ppn")
+        cfg.set_wake_word("Hey Jarvis", "hey_jarvis")
         reloaded = ConfigManager(config_path=tmp_config_path).load()
-        assert reloaded.config.wake_word == "Jarvis"
-        assert reloaded.config.wake_word_ppn_filename == "jarvis_rpi.ppn"
+        assert reloaded.config.wake_word == "Hey Jarvis"
+        assert reloaded.config.wake_word_model == "hey_jarvis"
 
 
 class TestValidateApiKeys:
-    def test_all_missing_returns_three_names(self, cfg):
+    def test_all_missing_returns_two_names(self, cfg):
         missing = cfg.validate_api_keys()
-        assert set(missing) == {"picovoice_access_key", "groq_api_key", "gemini_api_key"}
+        assert set(missing) == {"groq_api_key", "gemini_api_key"}
 
     def test_all_set_returns_empty_list(self, tmp_config_path, config_dict):
-        config_dict["api_keys"]["picovoice_access_key"] = "key1"
-        config_dict["api_keys"]["groq_api_key"] = "key2"
-        config_dict["api_keys"]["gemini_api_key"] = "key3"
+        config_dict["api_keys"]["groq_api_key"] = "key1"
+        config_dict["api_keys"]["gemini_api_key"] = "key2"
         import pathlib
         pathlib.Path(tmp_config_path).write_text(json.dumps(config_dict))
         cm = ConfigManager(config_path=tmp_config_path).load()
@@ -74,7 +73,6 @@ class TestValidateApiKeys:
         cm = ConfigManager(config_path=tmp_config_path).load()
         missing = cm.validate_api_keys()
         assert "groq_api_key" not in missing
-        assert "picovoice_access_key" in missing
         assert "gemini_api_key" in missing
 
 
