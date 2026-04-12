@@ -62,11 +62,28 @@ class Recorder(QThread):
 
         pa = pyaudio.PyAudio()
 
-        # Use the device's native sample rate to avoid InvalidSampleRate errors.
-        if self._device_index is not None:
-            info = pa.get_device_info_by_index(self._device_index)
-        else:
-            info = pa.get_default_input_device_info()
+        # Resolve which device to use.  If the configured index has no input
+        # channels (e.g. the USB mic index shifted after reboot), scan for a
+        # USB input device, then fall back to the system default.
+        def _find_input_device():
+            if self._device_index is not None:
+                candidate = pa.get_device_info_by_index(self._device_index)
+                if candidate["maxInputChannels"] >= 1:
+                    return candidate, self._device_index
+                log.warning(
+                    "Configured device_index=%d (%s) has no input channels — scanning for USB mic.",
+                    self._device_index, candidate["name"],
+                )
+            for i in range(pa.get_device_count()):
+                info_i = pa.get_device_info_by_index(i)
+                if info_i["maxInputChannels"] >= 1 and "usb" in info_i["name"].lower():
+                    log.info("Auto-selected USB input device: index=%d name=%s", i, info_i["name"])
+                    return info_i, i
+            info_d = pa.get_default_input_device_info()
+            log.info("Using default input device: %s", info_d["name"])
+            return info_d, None
+
+        info, resolved_index = _find_input_device()
         self._sample_rate = int(info["defaultSampleRate"])
 
         open_kwargs = {
@@ -76,12 +93,12 @@ class Recorder(QThread):
             "input":            True,
             "frames_per_buffer": self._frame_size,
         }
-        if self._device_index is not None:
-            open_kwargs["input_device_index"] = self._device_index
+        if resolved_index is not None:
+            open_kwargs["input_device_index"] = resolved_index
 
         stream = pa.open(**open_kwargs)
-        log.info("Recorder started. rate=%d silence_rms=%d",
-                 self._sample_rate, self._cfg.silence_threshold_rms)
+        log.info("Recorder started. device=%s rate=%d silence_rms=%d",
+                 info["name"], self._sample_rate, self._cfg.silence_threshold_rms)
 
         threshold     = self._cfg.silence_threshold_rms
         silence_limit = self._cfg.silence_duration_seconds

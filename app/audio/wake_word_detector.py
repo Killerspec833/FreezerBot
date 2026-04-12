@@ -85,11 +85,32 @@ class WakeWordDetector(QThread):
         OWW_RATE     = 16000   # rate openWakeWord requires
         FRAME_LENGTH = 1280    # 80 ms at 16000 Hz
 
-        # Use the device's native sample rate to avoid InvalidSampleRate errors.
-        if self._device_index is not None:
-            info = pa.get_device_info_by_index(self._device_index)
-        else:
-            info = pa.get_default_input_device_info()
+        # Resolve which device to use for input.
+        # If a specific index is configured, verify it actually has input channels.
+        # If not (e.g. it's an output device or the index shifted after reboot),
+        # fall back to scanning for the first device whose name contains "usb"
+        # (case-insensitive), then the system default.
+        def _find_input_device() -> tuple[dict, Optional[int]]:
+            if self._device_index is not None:
+                candidate = pa.get_device_info_by_index(self._device_index)
+                if candidate["maxInputChannels"] >= 1:
+                    return candidate, self._device_index
+                log.warning(
+                    "Configured device_index=%d (%s) has no input channels — scanning for USB mic.",
+                    self._device_index, candidate["name"],
+                )
+            # Scan for a USB input device
+            for i in range(pa.get_device_count()):
+                info_i = pa.get_device_info_by_index(i)
+                if info_i["maxInputChannels"] >= 1 and "usb" in info_i["name"].lower():
+                    log.info("Auto-selected USB input device: index=%d name=%s", i, info_i["name"])
+                    return info_i, i
+            # Last resort: system default input
+            info_d = pa.get_default_input_device_info()
+            log.info("Using default input device: %s", info_d["name"])
+            return info_d, None
+
+        info, resolved_index = _find_input_device()
         native_rate = int(info["defaultSampleRate"])
 
         # How many native frames to read per 1280-sample OWW chunk.
@@ -102,13 +123,13 @@ class WakeWordDetector(QThread):
             "input":             True,
             "frames_per_buffer": native_frames,
         }
-        if self._device_index is not None:
-            open_kwargs["input_device_index"] = self._device_index
+        if resolved_index is not None:
+            open_kwargs["input_device_index"] = resolved_index
 
         stream = pa.open(**open_kwargs)
         log.info(
-            "WakeWordDetector running. model=%s threshold=%.2f native_rate=%d",
-            self._model_name, self._threshold, native_rate,
+            "WakeWordDetector running. model=%s threshold=%.2f native_rate=%d device=%s",
+            self._model_name, self._threshold, native_rate, info["name"],
         )
 
         try:
