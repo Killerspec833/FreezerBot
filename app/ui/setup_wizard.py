@@ -148,8 +148,11 @@ def _nav_buttons(
 class _WelcomeStep(QWidget):
     next_requested = pyqtSignal()
 
+    _SWIPE_THRESHOLD = 40  # px — minimum movement to count as a swipe
+
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._press_pos = None
         self.setStyleSheet(f"background-color: {COLOR_BACKGROUND};")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(MARGIN, MARGIN * 2, MARGIN, MARGIN)
@@ -181,10 +184,30 @@ class _WelcomeStep(QWidget):
         sub.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         layout.addWidget(sub)
 
+        layout.addSpacing(PADDING)
+
+        swipe_hint = QLabel("swipe to continue")
+        swipe_hint.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        swipe_font = QFont()
+        swipe_font.setPointSize(FONT_SMALL)
+        swipe_hint.setFont(swipe_font)
+        swipe_hint.setStyleSheet("color: #FFFFFF;")
+        layout.addWidget(swipe_hint)
+
         layout.addStretch(3)
 
-        _, _, next_btn = _nav_buttons(next_cb=self.next_requested.emit)
-        layout.addLayout(_)
+    def mousePressEvent(self, event) -> None:
+        self._press_pos = event.position().toPoint()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if self._press_pos is not None:
+            delta = event.position().toPoint() - self._press_pos
+            if (abs(delta.x()) >= self._SWIPE_THRESHOLD or
+                    abs(delta.y()) >= self._SWIPE_THRESHOLD):
+                self.next_requested.emit()
+        self._press_pos = None
+        super().mouseReleaseEvent(event)
 
 
 # ---------------------------------------------------------------------------
