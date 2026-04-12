@@ -63,6 +63,8 @@ SYSTEM_PACKAGES=(
     xorg
     xinit
     x11-xserver-utils
+    x11-apps
+    xinput
     xserver-xorg-input-evdev
     matchbox-window-manager
     # Python build tools

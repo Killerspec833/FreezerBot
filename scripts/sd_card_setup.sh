@@ -60,7 +60,7 @@ APT_PACKAGES=(
     # Qt6 / display
     libgl1 libegl1 libxkbcommon-x11-0
     # X11 (for PyQt6 xcb backend)
-    xorg xinit x11-xserver-utils xserver-xorg-input-evdev matchbox-window-manager
+    xorg xinit x11-xserver-utils x11-apps xinput xserver-xorg-input-evdev matchbox-window-manager
     # Python build tools
     python3-dev python3-pip build-essential libssl-dev libffi-dev
     # Utilities

@@ -127,6 +127,11 @@ class AppController(QObject):
             log.debug("Inactivity timeout while CONFIRMING — resetting timer.")
             self.reset_inactivity_timer()
             return
+        # Keep screen alive during setup wizard.
+        if self._sm.current == AppState.SETUP:
+            log.debug("Inactivity timeout during SETUP — resetting timer.")
+            self.reset_inactivity_timer()
+            return
         log.info("Inactivity timeout — going to sleep.")
         self._sm.force(AppState.SLEEP)
 
@@ -398,7 +403,7 @@ class AppController(QObject):
         log.info("Setup wizard complete. Saving config.")
         self._cfg.set_wake_word(
             wake_word=config_data.get("wake_word", ""),
-            ppn_filename=config_data.get("wake_word_ppn_filename", ""),
+            model_name=config_data.get("wake_word_model", ""),
         )
         self._cfg.set_setup_complete(True)
         log.info("Config saved. Wake word: %s", config_data.get("wake_word"))
