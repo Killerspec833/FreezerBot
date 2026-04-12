@@ -1,7 +1,7 @@
 """
 InventoryScreen — scrollable inventory table with location tabs.
 
-Layout (480 x 800 portrait):
+Layout (1024 x 600 landscape):
   - LocationTabBar across the top (All | Basement Freezer | Kitchen Freezer | Fridge)
   - QTableWidget filling the remaining height (Item | Qty | Location)
   - Close button pinned at the bottom

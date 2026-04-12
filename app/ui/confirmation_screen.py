@@ -4,7 +4,7 @@ ConfirmationScreen — displayed after speech is parsed for ADD or REMOVE.
 Shows the interpreted item/qty/location and asks user to confirm or deny.
 Confirmation can be via touch (buttons) or voice (handled by AppController).
 
-Layout (480 x 800 portrait):
+Layout (1024 x 600 landscape):
   - Header: "I heard:" / "Removing:"
   - Key-value table: Item / Quantity / Location
   - Hint label: "Say 'yes' to confirm or 'no' to cancel"

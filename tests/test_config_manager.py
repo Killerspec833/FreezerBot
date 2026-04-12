@@ -29,7 +29,7 @@ class TestLoad:
 
     def test_loads_ui_defaults(self, cfg):
         assert cfg.config.ui.sleep_timeout_seconds == 300
-        assert cfg.config.ui.screen_width == 480
+        assert cfg.config.ui.screen_width == 1024
 
     def test_loads_fuzzy_threshold(self, cfg):
         assert cfg.config.fuzzy_search.similarity_threshold == 70

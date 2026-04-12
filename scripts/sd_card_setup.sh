@@ -103,7 +103,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
 done < "$REQUIREMENTS"
 
 # ---------------------------------------------------------------------------
-# 4. Display: portrait rotation
+# 4. Display: landscape display
 # ---------------------------------------------------------------------------
 section "Display configuration"
 
@@ -112,18 +112,17 @@ CONFIG_TXT="/boot/firmware/config.txt"
 [[ -f "$CONFIG_TXT" ]] || CONFIG_TXT="/boot/config.txt"
 
 # Append display settings if not already present
-if ! grep -q "display_rotate" "$CONFIG_TXT"; then
+if ! grep -q "dtoverlay=vc4-kms-v3d" "$CONFIG_TXT"; then
     cat >> "$CONFIG_TXT" <<'EOF'
 
-# Freezerbot: portrait display (rotate 90 degrees clockwise)
-display_rotate=1
+# Freezerbot: landscape display (native orientation, no rotation)
 dtoverlay=vc4-kms-v3d
 # Prevent console blanking at boot
 consoleblank=0
 EOF
-    log "Display rotation added to $CONFIG_TXT"
+    log "Display settings added to $CONFIG_TXT"
 else
-    log "Display rotation already configured."
+    log "Display already configured."
 fi
 
 # Qt platform environment for framebuffer / X11
@@ -133,7 +132,7 @@ if ! grep -q "QT_QPA_PLATFORM" "$ENV_FILE"; then
 
 # Freezerbot Qt display settings
 QT_QPA_PLATFORM=xcb
-QT_QPA_EVDEV_TOUCHSCREEN_PARAMETERS=/dev/input/touchscreen0:rotate=90
+QT_QPA_EVDEV_TOUCHSCREEN_PARAMETERS=/dev/input/touchscreen0
 EOF
     log "Qt environment variables added to $ENV_FILE"
 fi

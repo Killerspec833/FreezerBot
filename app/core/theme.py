@@ -1,13 +1,13 @@
 """
-All visual constants for the 480x800 portrait display.
+All visual constants for the 1024x600 landscape display.
 Import from here — never hardcode colours or sizes in UI widgets.
 """
 
 # ---------------------------------------------------------------------------
 # Display
 # ---------------------------------------------------------------------------
-SCREEN_W = 480
-SCREEN_H = 800
+SCREEN_W = 1024
+SCREEN_H = 600
 
 # ---------------------------------------------------------------------------
 # Colours  (hex strings for use in Qt stylesheets)

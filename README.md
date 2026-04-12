@@ -14,7 +14,7 @@ Ask questions like "Is there any chicken?" or "What's in the basement freezer?"
 | Raspberry Pi 4 (2GB+ RAM) | Any revision |
 | MicroSD card (16GB+) | For OS base image |
 | USB stick (16GB+, FAT32) | Label must be `FREEZERBOT` |
-| 7" touchscreen 800×480 | Portrait orientation |
+| 10.1" touchscreen 1024×600 | Landscape orientation |
 | USB microphone | Any USB mic |
 | Speaker | 3.5mm jack or USB |
 

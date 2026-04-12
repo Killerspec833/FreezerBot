@@ -42,9 +42,9 @@ class AudioConfig:
 @dataclass
 class UiConfig:
     sleep_timeout_seconds: int = 300
-    screen_width: int = 480
-    screen_height: int = 800
-    orientation: str = "portrait"
+    screen_width: int = 1024
+    screen_height: int = 600
+    orientation: str = "landscape"
 
 
 @dataclass
@@ -204,9 +204,9 @@ class ConfigManager:
         ui = r.get("ui", {})
         c.ui = UiConfig(
             sleep_timeout_seconds=ui.get("sleep_timeout_seconds", 300),
-            screen_width=ui.get("screen_width", 480),
-            screen_height=ui.get("screen_height", 800),
-            orientation=ui.get("orientation", "portrait"),
+            screen_width=ui.get("screen_width", 1024),
+            screen_height=ui.get("screen_height", 600),
+            orientation=ui.get("orientation", "landscape"),
         )
 
         net = r.get("network", {})

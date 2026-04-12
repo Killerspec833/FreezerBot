@@ -54,9 +54,9 @@ _BASE_CONFIG = {
     },
     "ui": {
         "sleep_timeout_seconds": 300,
-        "screen_width": 480,
-        "screen_height": 800,
-        "orientation": "portrait",
+        "screen_width": 1024,
+        "screen_height": 600,
+        "orientation": "landscape",
     },
     "network": {
         "connectivity_check_host": "8.8.8.8",

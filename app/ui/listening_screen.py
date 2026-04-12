@@ -1,7 +1,7 @@
 """
 ListeningScreen — shown while the system is recording audio.
 
-Layout (480 x 800 portrait):
+Layout (1024 x 600 landscape):
   - AnimatedCircle centred vertically in the upper 60% of the screen
   - "Listening..." label below the circle
   - Optional status line at the bottom (e.g. "Processing...")
