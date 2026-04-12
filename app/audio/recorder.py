@@ -61,6 +61,14 @@ class Recorder(QThread):
         import pyaudio
 
         pa = pyaudio.PyAudio()
+
+        # Use the device's native sample rate to avoid InvalidSampleRate errors.
+        if self._device_index is not None:
+            info = pa.get_device_info_by_index(self._device_index)
+        else:
+            info = pa.get_default_input_device_info()
+        self._sample_rate = int(info["defaultSampleRate"])
+
         open_kwargs = {
             "format":           pyaudio.paInt16,
             "channels":         1,
