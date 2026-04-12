@@ -73,6 +73,9 @@ SYSTEM_PACKAGES=(
     build-essential
     libssl-dev
     libffi-dev
+    # Python packages that must be installed via apt (pip arm64 builds fail)
+    python3-pygame
+    python3-pyqt6
     # Utilities
     sqlite3
     git

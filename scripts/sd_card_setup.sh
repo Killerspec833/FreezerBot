@@ -63,6 +63,8 @@ APT_PACKAGES=(
     xorg xinit x11-xserver-utils x11-apps xinput xserver-xorg-input-evdev matchbox-window-manager
     # Python build tools
     python3-dev python3-pip build-essential libssl-dev libffi-dev
+    # Python packages that must be installed via apt (pip arm64 builds fail)
+    python3-pygame python3-pyqt6
     # Utilities
     sqlite3 git openssl rsync
 )
