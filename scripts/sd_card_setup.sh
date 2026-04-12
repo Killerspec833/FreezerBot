@@ -58,7 +58,7 @@ APT_PACKAGES=(
     # Audio
     portaudio19-dev libportaudio2 alsa-utils mpg123 pulseaudio
     # Qt6 / display
-    libgl1 libegl1 libxkbcommon-x11-0
+    libgl1 libegl1 libxkbcommon-x11-0 libxcb-cursor0
     # X11 (for PyQt6 xcb backend)
     xorg xinit x11-xserver-utils x11-apps xinput xserver-xorg-input-evdev matchbox-window-manager
     # Python build tools

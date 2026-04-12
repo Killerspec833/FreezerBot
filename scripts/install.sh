@@ -59,6 +59,7 @@ SYSTEM_PACKAGES=(
     libgl1
     libegl1
     libxkbcommon-x11-0
+    libxcb-cursor0
     # X11 (needed for PyQt6 xcb platform plugin)
     xorg
     xinit
