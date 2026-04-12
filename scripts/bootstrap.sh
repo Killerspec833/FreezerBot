@@ -62,6 +62,14 @@ done
 log "Internet connectivity confirmed."
 
 # ---------------------------------------------------------------------------
+# 1b. Ensure git is installed before trying to clone
+# ---------------------------------------------------------------------------
+if ! command -v git &>/dev/null; then
+    log "git not found — installing..."
+    sudo apt-get install -y -qq git 2>&1 | tail -1
+fi
+
+# ---------------------------------------------------------------------------
 # 2. Check if app is already installed on USB stick
 # ---------------------------------------------------------------------------
 APP_MAIN="$USB_ROOT/app/main.py"

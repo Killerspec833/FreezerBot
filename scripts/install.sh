@@ -77,6 +77,7 @@ SYSTEM_PACKAGES=(
     sqlite3
     git
     openssl
+    rsync
 )
 
 for pkg in "${SYSTEM_PACKAGES[@]}"; do
