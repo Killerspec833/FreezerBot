@@ -155,31 +155,11 @@ if [[ -f "$CLONE_DIR/keys.enc" ]]; then
 fi
 
 # Ensure required directories exist
-mkdir -p "$USB_ROOT/data" "$USB_ROOT/logs" "$USB_ROOT/wake_words"
+mkdir -p "$USB_ROOT/data" "$USB_ROOT/logs"
 chmod +x "$USB_ROOT/scripts/"*.sh 2>/dev/null || true
 chmod +x "$USB_ROOT/bootstrap.sh"  2>/dev/null || true
 
 log "Application code installed."
-
-# ---------------------------------------------------------------------------
-# Install / update systemd service
-# ---------------------------------------------------------------------------
-SERVICE_SRC="$CLONE_DIR/scripts/freezerbot.service"
-SERVICE_DEST="/etc/systemd/system/freezerbot.service"
-
-if [[ -f "$SERVICE_SRC" ]]; then
-    if ! diff -q "$SERVICE_SRC" "$SERVICE_DEST" &>/dev/null; then
-        log "Installing/updating systemd service..."
-        sudo cp "$SERVICE_SRC" "$SERVICE_DEST"
-        sudo systemctl daemon-reload
-        sudo systemctl enable freezerbot.service
-        log "  systemd service installed and enabled."
-    else
-        log "  systemd service already up to date."
-    fi
-else
-    log "  freezerbot.service not found in repo — skipping systemd setup."
-fi
 
 # ---------------------------------------------------------------------------
 # Configure auto-login (console, user pi)
@@ -194,6 +174,43 @@ ExecStart=
 ExecStart=-/sbin/agetty --autologin pi --noclear %I $TERM
 EOF
     log "  Auto-login configured."
+fi
+
+# ---------------------------------------------------------------------------
+# Configure kiosk X auto-start via .bash_profile and .xinitrc
+# ---------------------------------------------------------------------------
+BASH_PROFILE="/home/pi/.bash_profile"
+if ! grep -q "startx" "$BASH_PROFILE" 2>/dev/null; then
+    log "Configuring X auto-start in .bash_profile..."
+    cat >> "$BASH_PROFILE" <<'EOF'
+
+# Freezerbot: start X automatically on tty1
+if [[ -z "$DISPLAY" && "$(tty)" == "/dev/tty1" ]]; then
+    exec startx 2>/home/pi/startx.log
+fi
+EOF
+    log "  .bash_profile updated."
+fi
+
+XINITRC="/home/pi/.xinitrc"
+if [[ ! -f "$XINITRC" ]]; then
+    log "Creating .xinitrc..."
+    cat > "$XINITRC" <<'EOF'
+#!/bin/bash
+export FREEZERBOT_ROOT=/media/pi/FREEZERBOT
+export QT_QPA_PLATFORM=xcb
+xsetroot -cursor_name blank
+exec /bin/bash /media/pi/FREEZERBOT/bootstrap.sh
+EOF
+    chmod +x "$XINITRC"
+    log "  .xinitrc created."
+fi
+
+# Allow X to start from non-console sessions (safety net for future use)
+XWRAPPER="/etc/X11/Xwrapper.config"
+if ! grep -q "allowed_users=anybody" "$XWRAPPER" 2>/dev/null; then
+    sudo sh -c 'printf "allowed_users=anybody\nneeds_root_rights=yes\n" > /etc/X11/Xwrapper.config'
+    log "  Xwrapper.config configured."
 fi
 
 # ---------------------------------------------------------------------------
