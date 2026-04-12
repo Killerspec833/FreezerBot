@@ -82,23 +82,33 @@ class WakeWordDetector(QThread):
         oww = Model(wakeword_model_paths=[])  # load all bundled pre-trained models
         pa = pyaudio.PyAudio()
 
-        SAMPLE_RATE  = 16000
-        FRAME_LENGTH = 1280   # 80 ms chunks — what openWakeWord expects
+        OWW_RATE     = 16000   # rate openWakeWord requires
+        FRAME_LENGTH = 1280    # 80 ms at 16000 Hz
+
+        # Use the device's native sample rate to avoid InvalidSampleRate errors.
+        if self._device_index is not None:
+            info = pa.get_device_info_by_index(self._device_index)
+        else:
+            info = pa.get_default_input_device_info()
+        native_rate = int(info["defaultSampleRate"])
+
+        # How many native frames to read per 1280-sample OWW chunk.
+        native_frames = int(FRAME_LENGTH * native_rate / OWW_RATE)
 
         open_kwargs = {
-            "rate":              SAMPLE_RATE,
+            "rate":              native_rate,
             "channels":          1,
             "format":            pyaudio.paInt16,
             "input":             True,
-            "frames_per_buffer": FRAME_LENGTH,
+            "frames_per_buffer": native_frames,
         }
         if self._device_index is not None:
             open_kwargs["input_device_index"] = self._device_index
 
         stream = pa.open(**open_kwargs)
         log.info(
-            "WakeWordDetector running. model=%s threshold=%.2f",
-            self._model_name, self._threshold,
+            "WakeWordDetector running. model=%s threshold=%.2f native_rate=%d",
+            self._model_name, self._threshold, native_rate,
         )
 
         try:
@@ -109,20 +119,28 @@ class WakeWordDetector(QThread):
                     self._resume_event.wait()       # sleep until resume()
                     if self.isInterruptionRequested():
                         break
-                    # Only restart the stream if we are genuinely resumed.
-                    # A second pause() could arrive between wait() returning
-                    # and this point, so recheck the flag.
                     if not self._paused:
                         stream.start_stream()
-                    continue   # re-evaluate pause state at the top of the loop
+                    continue
 
-                pcm_bytes = stream.read(FRAME_LENGTH, exception_on_overflow=False)
-                pcm = np.frombuffer(pcm_bytes, dtype=np.int16)
+                pcm_bytes = stream.read(native_frames, exception_on_overflow=False)
+                pcm_native = np.frombuffer(pcm_bytes, dtype=np.int16)
+
+                # Downsample to 16000 Hz if needed
+                if native_rate != OWW_RATE:
+                    pcm = np.interp(
+                        np.linspace(0, len(pcm_native) - 1, FRAME_LENGTH),
+                        np.arange(len(pcm_native)),
+                        pcm_native,
+                    ).astype(np.int16)
+                else:
+                    pcm = pcm_native
+
                 predictions = oww.predict(pcm)
 
                 if predictions.get(self._model_name, 0) >= self._threshold:
                     log.info("Wake word detected!")
-                    self.wake_word_detected.emit()   # queued → main thread
+                    self.wake_word_detected.emit()
 
         finally:
             stream.stop_stream()
