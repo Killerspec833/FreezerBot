@@ -196,6 +196,11 @@ class AppController(QObject):
         log.debug("Recorder started.")
 
     def _on_recording_complete(self, wav_bytes: bytes) -> None:
+        # If two recorders spawned from a burst detection, only process the last
+        # one created (self._recorder). Drop results from stale recorders.
+        if self.sender() is not self._recorder:
+            log.debug("Ignoring stale recording_complete from previous recorder.")
+            return
         # Keep detector paused until TTS finishes — resumed in _on_tts_finished.
         self._win.listening_screen.set_status("Transcribing…")
         self._stt_thread = STTThread(
@@ -224,9 +229,10 @@ class AppController(QObject):
         self._recording_active = False
         if self._sm.current in (AppState.LISTENING, AppState.CONFIRMING):
             # Re-listen (unknown intent) or wait for voice yes/no (confirming).
-            # Start recording immediately — no wake word required.
+            # Delay 600ms so speaker audio clears from the microphone buffer
+            # before we start recording — prevents TTS echo being transcribed.
             self._recording_active = True
-            self._start_recording()
+            QTimer.singleShot(600, self._start_recording)
         else:
             # All other states: unblock and resume the wake word detector.
             if self._wake_detector:
