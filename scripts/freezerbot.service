@@ -1,18 +1,16 @@
 [Unit]
 Description=Freezerbot Voice Inventory System
-After=network-online.target sound.target graphical.target
+After=network-online.target sound.target
 Wants=network-online.target
 ConditionPathExists=/media/pi/FREEZERBOT/bootstrap.sh
 
 [Service]
 User=pi
 Group=pi
-Environment=DISPLAY=:0
-Environment=XAUTHORITY=/home/pi/.Xauthority
 Environment=FREEZERBOT_ROOT=/media/pi/FREEZERBOT
 Environment=QT_QPA_PLATFORM=xcb
 WorkingDirectory=/media/pi/FREEZERBOT
-ExecStart=/bin/bash /media/pi/FREEZERBOT/bootstrap.sh
+ExecStart=xinit /bin/bash /media/pi/FREEZERBOT/bootstrap.sh -- :0 vt1 -nocursor
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
