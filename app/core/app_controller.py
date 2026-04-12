@@ -151,6 +151,9 @@ class AppController(QObject):
 
     def on_wake_word_detected(self) -> None:
         self.reset_inactivity_timer()
+        # Guard against burst detections: ignore if already recording.
+        if self._recorder and self._recorder.isRunning():
+            return
         if self._sm.current in (AppState.SLEEP, AppState.INVENTORY):
             if self._sm.transition(AppState.LISTENING):
                 self._start_recording()
