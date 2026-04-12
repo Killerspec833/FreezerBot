@@ -67,18 +67,17 @@ class Recorder(QThread):
         # USB input device, then fall back to the system default.
         def _find_input_device():
             if self._device_index is not None:
+                # Explicit index configured — verify it has input channels.
                 candidate = pa.get_device_info_by_index(self._device_index)
                 if candidate["maxInputChannels"] >= 1:
                     return candidate, self._device_index
                 log.warning(
-                    "Configured device_index=%d (%s) has no input channels — scanning for USB mic.",
+                    "Configured device_index=%d (%s) has no input channels — falling back to default.",
                     self._device_index, candidate["name"],
                 )
-            for i in range(pa.get_device_count()):
-                info_i = pa.get_device_info_by_index(i)
-                if info_i["maxInputChannels"] >= 1 and "usb" in info_i["name"].lower():
-                    log.info("Auto-selected USB input device: index=%d name=%s", i, info_i["name"])
-                    return info_i, i
+            # No index configured (or bad index) — use system default.
+            # Don't scan for hw: devices directly: if PulseAudio is running it
+            # owns the hw: device and direct access will fail with -9985.
             info_d = pa.get_default_input_device_info()
             log.info("Using default input device: %s", info_d["name"])
             return info_d, None
