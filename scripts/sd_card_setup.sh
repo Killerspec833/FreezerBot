@@ -137,6 +137,16 @@ EOF
     log "Qt environment variables added to $ENV_FILE"
 fi
 
+# Allow X server to be started from systemd service (not just console sessions)
+XWRAPPER="/etc/X11/Xwrapper.config"
+if ! grep -q "allowed_users=anybody" "$XWRAPPER" 2>/dev/null; then
+    cat > "$XWRAPPER" <<'EOF'
+allowed_users=anybody
+needs_root_rights=yes
+EOF
+    log "Xwrapper configured: allowed_users=anybody"
+fi
+
 # ---------------------------------------------------------------------------
 # 5. Audio: default output
 # ---------------------------------------------------------------------------
