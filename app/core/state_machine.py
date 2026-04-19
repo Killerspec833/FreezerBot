@@ -20,7 +20,7 @@ TRANSITIONS: dict[AppState, set[AppState]] = {
     AppState.SETUP:      {AppState.SLEEP},
     AppState.SLEEP:      {AppState.LISTENING},
     AppState.LISTENING:  {AppState.SLEEP, AppState.CONFIRMING, AppState.INVENTORY},
-    AppState.CONFIRMING: {AppState.LISTENING, AppState.SLEEP},
+    AppState.CONFIRMING: {AppState.LISTENING, AppState.SLEEP, AppState.INVENTORY},
     AppState.INVENTORY:  {AppState.SLEEP, AppState.LISTENING},
 }
 

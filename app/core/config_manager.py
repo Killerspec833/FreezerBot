@@ -40,7 +40,7 @@ class AudioConfig:
 
 @dataclass
 class UiConfig:
-    sleep_timeout_seconds: int = 300
+    sleep_timeout_seconds: int = 600
     screen_width: int = 1024
     screen_height: int = 600
     orientation: str = "landscape"

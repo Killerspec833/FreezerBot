@@ -4,16 +4,16 @@ InventoryScreen — scrollable inventory table with location tabs.
 Layout (1024 x 600 landscape):
   - LocationTabBar across the top (All | Basement Freezer | Kitchen Freezer | Fridge)
   - QTableWidget filling the remaining height (Item | Qty | Location)
-  - Close button pinned at the bottom
+  - Bottom bar: idle text  OR  [snowflake] + command list side-by-side in layout
 """
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QHBoxLayout,
     QHeaderView,
     QLabel,
-    QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -28,10 +28,10 @@ from app.core.theme import (
     FONT_SMALL,
     MARGIN,
     PADDING,
-    STYLE_NEUTRAL_BUTTON,
     STYLE_TABLE,
 )
 from app.ui.widgets.location_tab import LocationTabBar
+from app.ui.widgets.snowflake_widget import SnowflakeWidget
 
 
 class InventoryScreen(QWidget):
@@ -51,6 +51,23 @@ class InventoryScreen(QWidget):
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    def show_snowflake(self, status: str = "Listening…") -> None:
+        """Show the animated snowflake indicator (mic is active)."""
+        self._snowflake.set_status(status)
+        self._snowflake.start()
+        self._idle_footer.hide()
+        self._active_bar.show()
+
+    def hide_snowflake(self) -> None:
+        """Hide the snowflake indicator."""
+        self._snowflake.stop()
+        self._active_bar.hide()
+        self._idle_footer.show()
+
+    def set_mic_status(self, text: str) -> None:
+        """Update the status text next to the snowflake (shown only when active)."""
+        self._snowflake.set_status(text)
 
     def load_data(self, rows: list[tuple], select_location: str = "all") -> None:
         """
@@ -124,25 +141,47 @@ class InventoryScreen(QWidget):
 
         layout.addSpacing(PADDING)
 
-        # Voice hint
-        hint = QLabel("Say \"Hey Jarvis, done\" when ready")
-        hint.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        hint_font = QFont()
-        hint_font.setPointSize(FONT_SMALL)
-        hint.setFont(hint_font)
-        hint.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; padding-bottom: 4px;")
-        layout.addWidget(hint)
-
-        # Done button
-        self._close_btn = QPushButton("Done")
-        self._close_btn.setStyleSheet(STYLE_NEUTRAL_BUTTON)
-        self._close_btn.setContentsMargins(MARGIN, 0, MARGIN, 0)
-        self._close_btn.clicked.connect(self.close_requested)
-        layout.addWidget(
-            self._close_btn,
-            alignment=Qt.AlignmentFlag.AlignHCenter,
+        # ---- Idle footer (shown when mic is off) ----
+        self._idle_footer = QLabel("Tap or speak to get started")
+        self._idle_footer.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        idle_font = QFont()
+        idle_font.setPointSize(FONT_SMALL)
+        self._idle_footer.setFont(idle_font)
+        self._idle_footer.setStyleSheet(
+            f"color: {COLOR_TEXT_SECONDARY}; padding-bottom: 8px;"
         )
-        self._close_btn.setFixedWidth(200)
+        layout.addWidget(self._idle_footer)
+
+        # ---- Active bar (shown when mic is on): [snowflake] [command list] ----
+        # Embedding the snowflake directly in the layout row avoids any
+        # floating-overlay z-order issues on bare X11 (no compositor).
+        self._active_bar = QWidget()
+        self._active_bar.setStyleSheet(f"background-color: {COLOR_BACKGROUND};")
+        bar_layout = QHBoxLayout(self._active_bar)
+        bar_layout.setContentsMargins(8, 0, 8, 8)
+        bar_layout.setSpacing(8)
+
+        self._snowflake = SnowflakeWidget(self._active_bar)
+        bar_layout.addWidget(
+            self._snowflake,
+            0,
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+        )
+
+        self._cmd_panel = QLabel(
+            "Add [item] to [location]  \u2022  Remove [item]  \u2022  "
+            "What\u2019s in [location]?  \u2022  List [location]  \u2022  Done / Finished"
+        )
+        cmd_font = QFont()
+        cmd_font.setPointSize(FONT_SMALL)
+        self._cmd_panel.setFont(cmd_font)
+        self._cmd_panel.setStyleSheet(f"color: {COLOR_TEXT_WHITE};")
+        self._cmd_panel.setWordWrap(True)
+        self._cmd_panel.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        bar_layout.addWidget(self._cmd_panel, 1)
+
+        self._active_bar.hide()
+        layout.addWidget(self._active_bar)
 
     # ------------------------------------------------------------------
     # Internal

@@ -13,6 +13,7 @@ Owns and connects all subsystems:
 """
 
 import os
+import time
 
 from PyQt6.QtCore import QObject, QTimer
 
@@ -72,6 +73,15 @@ class AppController(QObject):
         # thread is running, cleared when recording/TTS is fully done).
         self._recording_active = False
 
+        # Consecutive short-transcript (TTS echo) counter — reset on real speech.
+        self._echo_count = 0
+
+        # Timestamp of the last TTS-finished event. Wake-word detections within
+        # 2 s of TTS finishing are ignored — the paused stream accumulates a
+        # buffer of TTS audio that scores above the wake-word threshold when
+        # resumed, causing a spurious detection.
+        self._tts_finished_at: float = 0.0
+
         # --- TTS engine (always running) ---
         self._tts = TTSEngine(parent=self)
         self._tts.speaking_finished.connect(self._on_tts_finished)
@@ -79,9 +89,15 @@ class AppController(QObject):
 
         self._connect_ui_signals()
 
+        # Wire state changes so inventory refreshes whenever we return to SLEEP
+        self._sm.state_changed.connect(self._on_state_changed_ctrl)
+
         # Start audio pipeline only if setup is complete
         if cfg_manager.is_setup_complete():
             self._start_audio()
+
+        # Populate the inventory screen on startup
+        self._refresh_inventory()
 
         log.info("AppController initialised. State: %s", self._sm.current.name)
 
@@ -127,6 +143,11 @@ class AppController(QObject):
         )
 
     def _on_inactivity(self) -> None:
+        # Do not fire while audio pipeline is active — re-arm and try later.
+        if self._recording_active:
+            log.debug("Inactivity timeout while recording/processing — resetting timer.")
+            self.reset_inactivity_timer()
+            return
         # Do not interrupt an active confirmation — the user may be mid-tap.
         if self._sm.current == AppState.CONFIRMING:
             log.debug("Inactivity timeout while CONFIRMING — resetting timer.")
@@ -139,6 +160,16 @@ class AppController(QObject):
             return
         log.info("Inactivity timeout — going to sleep.")
         self._sm.force(AppState.SLEEP)
+        # Pause the wake word detector so it drains the mic buffer when it
+        # resumes.  Without this, TTS echoes from the last command accumulate
+        # while the app was active and immediately trigger a false wake-word
+        # the moment the screensaver becomes visible.  We also start a fresh
+        # 2-second grace period so any detection that slips through before the
+        # drain completes is ignored.
+        if self._wake_detector:
+            self._tts_finished_at = time.monotonic()
+            self._wake_detector.pause()
+            QTimer.singleShot(300, self._resume_detector)
 
     # ------------------------------------------------------------------
     # Touch wake
@@ -156,6 +187,13 @@ class AppController(QObject):
 
     def on_wake_word_detected(self) -> None:
         if self._recording_active:
+            return
+        # Post-TTS grace period: ignore wake-word detections for 2 s after TTS
+        # finishes. The paused stream accumulates buffered audio (TTS echo) that
+        # can score above the detection threshold the moment the stream resumes.
+        elapsed = time.monotonic() - self._tts_finished_at
+        if elapsed < 2.0:
+            log.debug("Wake word ignored — %.1fs post-TTS grace period.", elapsed)
             return
         self._recording_active = True
         # Block the detector from emitting further wake_word_detected signals
@@ -181,8 +219,25 @@ class AppController(QObject):
 
     def _start_recording(self) -> None:
         """Pause wake word detector, open recorder."""
+        # Guard: only record in states where audio input is expected.
+        # This prevents stale QTimer.singleShot re-listen calls from opening
+        # a recorder after the app has already transitioned to SLEEP.
+        if self._sm.current not in (AppState.LISTENING, AppState.CONFIRMING):
+            log.debug(
+                "_start_recording() called in state %s — ignoring stale timer.",
+                self._sm.current.name,
+            )
+            self._recording_active = False
+            return
+
         if self._wake_detector:
             self._wake_detector.pause()
+
+        # Show snowflake on whichever screen is active
+        if self._sm.current == AppState.CONFIRMING:
+            self._win.confirmation_screen.set_voice_hint("Say  YES  or  NO  now")
+            self._win.confirmation_screen.show_snowflake("Listening…")
+        # LISTENING state: snowflake is already shown by main_window state change
 
         cfg = self._cfg.config
         self._recorder = Recorder(
@@ -202,7 +257,8 @@ class AppController(QObject):
             log.debug("Ignoring stale recording_complete from previous recorder.")
             return
         # Keep detector paused until TTS finishes — resumed in _on_tts_finished.
-        self._win.listening_screen.set_status("Transcribing…")
+        self._win.confirmation_screen.hide_snowflake()
+        self._win.inventory_screen.set_mic_status("Transcribing…")
         self._stt_thread = STTThread(
             wav_bytes=wav_bytes,
             groq_api_key=self._cfg.config.api_keys.groq_api_key,
@@ -214,30 +270,61 @@ class AppController(QObject):
 
     def _on_recording_failed(self, reason: str) -> None:
         log.warning("Recording failed: %s", reason)
+        self._win.confirmation_screen.hide_snowflake()
         self._tts.speak("I didn't catch that. Please try again.")
-        self._sm.transition(AppState.SLEEP)
+        self._sm.transition(AppState.INVENTORY)
         # _recording_active stays True until TTS finishes (_on_tts_finished)
 
     def _on_tts_finished(self) -> None:
         """Called when TTS finishes speaking.
 
         Resumes the wake word detector (prevents speaker echo triggering it).
-        If the app is in LISTENING state (e.g. after an unknown intent or deny),
-        automatically starts a new recording cycle so the user doesn't have to
-        say the wake word again.
+        If the app is in CONFIRMING state, automatically starts a new recording
+        cycle so the user can say yes/no without re-saying the wake word.
         """
+        self._tts_finished_at = time.monotonic()
         self._recording_active = False
-        if self._sm.current in (AppState.LISTENING, AppState.CONFIRMING):
-            # Re-listen (unknown intent) or wait for voice yes/no (confirming).
-            # Delay 600ms so speaker audio clears from the microphone buffer
-            # before we start recording — prevents TTS echo being transcribed.
+        self.reset_inactivity_timer()
+        if self._sm.current == AppState.CONFIRMING:
+            # speaking_finished fires when pygame's internal buffer empties, but
+            # PulseAudio still has ~300-500 ms of audio queued for playback.
+            # We wait 3 s total so speaker output + room reverb clear before the
+            # mic opens.  Show a countdown so the user knows to wait.
             self._recording_active = True
-            QTimer.singleShot(600, self._start_recording)
+            self._win.confirmation_screen.set_voice_hint("Mic opens in 3s — wait…")
+            QTimer.singleShot(1000, lambda: self._win.confirmation_screen.set_voice_hint("Mic opens in 2s…"))
+            QTimer.singleShot(2000, lambda: self._win.confirmation_screen.set_voice_hint("Mic opens in 1s…"))
+            QTimer.singleShot(3000, self._start_recording)
         else:
-            # All other states: unblock and resume the wake word detector.
-            if self._wake_detector:
-                self._wake_detector.blockSignals(False)
-                self._wake_detector.resume()
+            # All other states (SLEEP, LISTENING, INVENTORY, etc.): resume the
+            # detector so the next real "Hey Jarvis" is caught.
+            # The 2-second grace period in on_wake_word_detected handles any
+            # stale detections from buffered TTS audio.
+            QTimer.singleShot(500, self._resume_detector)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _resume_detector(self) -> None:
+        """Unblock and resume the wake word detector (called via QTimer)."""
+        if self._wake_detector:
+            self._wake_detector.blockSignals(False)
+            self._wake_detector.resume()
+
+    def _refresh_inventory(self) -> None:
+        """Reload all items from DB and repopulate the inventory screen."""
+        items = self._db.get_all_items()
+        rows = [(i.item_name, i.quantity, i.location) for i in items]
+        self._win.inventory_screen.load_data(rows, select_location="all")
+
+    def _on_state_changed_ctrl(self, state: AppState) -> None:
+        """Refresh inventory when waking to LISTENING (returns from screensaver).
+        INVENTORY transitions are NOT refreshed here — LIST/QUERY handlers set their
+        own filtered view via load_data(), and ADD/REMOVE call _refresh_inventory()
+        explicitly after the DB write so the updated full list is shown."""
+        if state == AppState.LISTENING:
+            self._refresh_inventory()
 
     # ------------------------------------------------------------------
     # Speech-to-text
@@ -245,7 +332,34 @@ class AppController(QObject):
 
     def on_transcript_ready(self, transcript: str) -> None:
         log.info("Transcript: '%s'", transcript)
-        self._win.listening_screen.set_status("Thinking…")
+
+        # Guard against TTS echo: very short transcripts (< 3 words) are almost
+        # certainly speaker bleed, not a real command.
+        # Exception: CONFIRMING state legitimately receives 1-word answers ("yes"/"no").
+        if len(transcript.split()) < 3 and self._sm.current != AppState.CONFIRMING:
+            self._echo_count += 1
+            log.warning(
+                "Transcript too short (%d word(s)) — likely TTS echo #%d; re-listening.",
+                len(transcript.split()),
+                self._echo_count,
+            )
+            if self._echo_count >= 2:
+                # Two consecutive echoes: give up and sleep so the detector can
+                # catch a real wake word from the user.
+                log.warning("Too many echo transcripts — returning to SLEEP.")
+                self._echo_count = 0
+                self._recording_active = False
+                self._sm.force(AppState.INVENTORY)
+                QTimer.singleShot(1500, self._resume_detector)
+            elif self._sm.current in (AppState.LISTENING, AppState.CONFIRMING):
+                # Wait longer than the first delay to let any remaining echo clear.
+                QTimer.singleShot(1200, self._start_recording)
+            return
+
+        # Real command — reset echo counter.
+        self._echo_count = 0
+
+        self._win.inventory_screen.set_mic_status("Thinking…")
         self._intent_thread = IntentParserThread(transcript, self._cfg, parent=self)
         self._intent_thread.intent_parsed.connect(self.on_intent_parsed)
         self._intent_thread.error.connect(
@@ -256,7 +370,7 @@ class AppController(QObject):
     def _on_stt_failed(self, reason: str) -> None:
         log.warning("STT failed: %s", reason)
         self._tts.speak("Sorry, I couldn't understand that. Please try again.")
-        self._sm.transition(AppState.SLEEP)
+        self._sm.transition(AppState.INVENTORY)
 
     # ------------------------------------------------------------------
     # Intent parsed
@@ -308,7 +422,7 @@ class AppController(QObject):
                     f"I couldn't find {parsed_intent.item_name} in the freezer. "
                     f"Nothing was removed."
                 )
-                self._sm.transition(AppState.SLEEP)
+                self._sm.transition(AppState.INVENTORY)
                 return
 
             parsed_intent._resolved_item_id       = match.item.id
@@ -320,7 +434,8 @@ class AppController(QObject):
             if decision == "direct":
                 # Score >= 90: high-confidence match — execute without confirmation
                 self._execute_intent(parsed_intent)
-                self._sm.transition(AppState.SLEEP)
+                self._refresh_inventory()
+                self._sm.transition(AppState.INVENTORY)
                 return
 
             # "confirm" — score 70-89: show confirmation screen
@@ -373,9 +488,9 @@ class AppController(QObject):
             self._sm.transition(AppState.INVENTORY)
 
         elif intent_type == IntentType.UNKNOWN:
-            log.warning("Unknown intent — re-listening after TTS.")
-            self._sm.transition(AppState.LISTENING)
-            self._tts.speak("Sorry, I didn't understand. Please try again.")
+            log.warning("Unknown intent — returning to INVENTORY.")
+            self._sm.force(AppState.INVENTORY)
+            self._tts.speak("Sorry, I didn't understand.")
 
     # ------------------------------------------------------------------
     # Confirmation
@@ -387,14 +502,15 @@ class AppController(QObject):
         if intent is not None:
             self._execute_intent(intent)
         self._pending_intent = None
-        self._sm.transition(AppState.SLEEP)
+        self._refresh_inventory()
+        self._sm.transition(AppState.INVENTORY)
 
     def _on_denied(self) -> None:
-        log.info("User denied — re-listening after TTS.")
+        log.info("User denied — returning to INVENTORY.")
         self.reset_inactivity_timer()
         self._pending_intent = None
-        self._sm.transition(AppState.LISTENING)
-        self._tts.speak("Let's try again. Listening.")
+        self._sm.force(AppState.INVENTORY)
+        self._tts.speak("Cancelled.")
 
     def _execute_intent(self, intent) -> None:
         intent_type = intent.intent_type.name

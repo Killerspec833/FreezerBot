@@ -19,11 +19,11 @@ from app.ui.sleep_screen import SleepScreen
 
 
 # Fixed indices in the QStackedWidget
-_IDX_SLEEP        = 0
-_IDX_LISTENING    = 1
-_IDX_CONFIRMING   = 2
-_IDX_INVENTORY    = 3
-_IDX_SETUP        = 4
+_IDX_INVENTORY    = 0
+_IDX_CONFIRMING   = 1
+_IDX_SETUP        = 2
+_IDX_SLEEP        = 3   # falling-snow screensaver
+# LISTENING maps to _IDX_INVENTORY (inventory + snowflake indicator)
 
 
 class MainWindow(QMainWindow):
@@ -91,19 +91,20 @@ class MainWindow(QMainWindow):
             for k, v in self._cfg.config.locations.items()
         }
 
+        # Kept for backwards-compat with AppController signal wiring
         self._sleep        = SleepScreen(self)
         self._listening    = ListeningScreen(self)
+
         self._confirmation = ConfirmationScreen(self)
         self._inventory    = InventoryScreen(location_names, self)
         self._setup        = SetupWizard(self._cfg, self)
 
         # Order must match _IDX_* constants
         for screen in (
-            self._sleep,
-            self._listening,
-            self._confirmation,
             self._inventory,
+            self._confirmation,
             self._setup,
+            self._sleep,
         ):
             self._stack.addWidget(screen)
 
@@ -113,22 +114,26 @@ class MainWindow(QMainWindow):
 
     def _on_state_changed(self, state: AppState) -> None:
         mapping = {
-            AppState.SLEEP:      _IDX_SLEEP,
-            AppState.LISTENING:  _IDX_LISTENING,
+            AppState.SLEEP:      _IDX_SLEEP,       # screensaver
+            AppState.LISTENING:  _IDX_INVENTORY,   # inventory + snowflake
             AppState.CONFIRMING: _IDX_CONFIRMING,
             AppState.INVENTORY:  _IDX_INVENTORY,
             AppState.SETUP:      _IDX_SETUP,
         }
-        idx = mapping.get(state, _IDX_SLEEP)
+        idx = mapping.get(state, _IDX_INVENTORY)
 
-        # Notify outgoing screen
-        current_widget = self._stack.currentWidget()
-        if hasattr(current_widget, "on_hide"):
-            current_widget.on_hide()
+        prev_idx = self._stack.currentIndex()
+        if idx != prev_idx:
+            current_widget = self._stack.currentWidget()
+            if hasattr(current_widget, "on_hide"):
+                current_widget.on_hide()
+            self._stack.setCurrentIndex(idx)
+            incoming = self._stack.currentWidget()
+            if hasattr(incoming, "on_show"):
+                incoming.on_show()
 
-        self._stack.setCurrentIndex(idx)
-
-        # Notify incoming screen
-        incoming = self._stack.currentWidget()
-        if hasattr(incoming, "on_show"):
-            incoming.on_show()
+        # Snowflake: visible whenever the mic is (or may become) active
+        if state == AppState.LISTENING:
+            self._inventory.show_snowflake("Listening…")
+        else:
+            self._inventory.hide_snowflake()

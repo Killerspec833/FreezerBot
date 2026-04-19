@@ -8,6 +8,7 @@
 # keys.enc IS intentionally committed (AES-256 encrypted — safe in git)
 # The passphrase lives on the USB stick only
 config/.install_passphrase
+Account_API.txt
 
 # config/config.json IS committed as a template (all keys empty)
 # Do NOT add config/config.json here — prepare_usb.sh copies it to the USB stick

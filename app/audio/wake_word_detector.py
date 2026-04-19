@@ -25,7 +25,7 @@ class WakeWordDetector(QThread):
     def __init__(
         self,
         model_name: str,
-        threshold: float = 0.5,
+        threshold: float = 0.7,
         device_index: Optional[int] = None,
         parent=None,
     ):
@@ -134,6 +134,20 @@ class WakeWordDetector(QThread):
                     self._resume_event.wait()       # sleep until resume()
                     if self.isInterruptionRequested():
                         break
+                    # Drain the PulseAudio buffer that accumulated while paused.
+                    # TTS audio + room reverb sits in this buffer and scores
+                    # above the wake-word threshold the moment we start reading,
+                    # causing spurious detections.  Read and discard ~3.5 s worth
+                    # (real-room echo tails outlast 2 s).
+                    drain_chunks = int(3.5 * native_rate / native_frames)
+                    for _ in range(drain_chunks):
+                        stream.read(native_frames, exception_on_overflow=False)
+                    # Reset OWW model context so past activation decays.
+                    oww.reset()
+                    log.debug(
+                        "WakeWordDetector: drained %d chunks after resume.",
+                        drain_chunks,
+                    )
                     continue
 
                 pcm_bytes = stream.read(native_frames, exception_on_overflow=False)

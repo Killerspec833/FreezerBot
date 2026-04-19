@@ -39,6 +39,7 @@ from app.core.theme import (
     STYLE_DENY_BUTTON,
     STYLE_TABLE,
 )
+from app.ui.widgets.snowflake_widget import SnowflakeWidget
 
 
 class ConfirmationScreen(QWidget):
@@ -51,9 +52,29 @@ class ConfirmationScreen(QWidget):
         self.setStyleSheet(f"background-color: {COLOR_BACKGROUND};")
         self._build_ui()
 
+        # Snowflake overlay — shown in bottom-left when mic is recording
+        self._snowflake = SnowflakeWidget(self)
+        self._snowflake.move(8, 544)   # updated by resizeEvent
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    def show_snowflake(self, status: str = "Listening…") -> None:
+        self._snowflake.set_status(status)
+        self._snowflake.start()
+
+    def hide_snowflake(self) -> None:
+        self._snowflake.stop()
+
+    def set_voice_hint(self, text: str) -> None:
+        """Update the voice hint label (e.g. countdown or 'Listening now')."""
+        self._voice_hint.setText(text)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        margin = 8
+        self._snowflake.move(margin, self.height() - self._snowflake.height() - margin)
 
     def populate(
         self,
@@ -65,6 +86,9 @@ class ConfirmationScreen(QWidget):
         """Fill the table with parsed intent data."""
         verb = "Adding" if intent_type == "ADD" else "Removing"
         self._header.setText(f"{verb}:")
+
+        # Reset voice hint to default; AppController will update it when mic opens
+        self._voice_hint.setText("Say  'yes'  to confirm  or  'no'  to cancel")
 
         rows = [
             ("Item",     item_name),
@@ -127,15 +151,15 @@ class ConfirmationScreen(QWidget):
 
         outer.addStretch(1)
 
-        # Voice hint label
-        hint = QLabel("Say  'yes'  to confirm  or  'no'  to cancel")
-        hint.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        # Voice hint label (text updated dynamically by AppController)
+        self._voice_hint = QLabel("Say  'yes'  to confirm  or  'no'  to cancel")
+        self._voice_hint.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         hint_font = QFont()
         hint_font.setPointSize(FONT_SMALL)
         hint_font.setItalic(True)
-        hint.setFont(hint_font)
-        hint.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY};")
-        outer.addWidget(hint)
+        self._voice_hint.setFont(hint_font)
+        self._voice_hint.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY};")
+        outer.addWidget(self._voice_hint)
 
         outer.addSpacing(PADDING)
 
