@@ -75,6 +75,7 @@ class AppController(QObject):
 
         # Consecutive short-transcript (TTS echo) counter — reset on real speech.
         self._echo_count = 0
+        self._relisten_after_tts = False
 
         # Timestamp of the last TTS-finished event. Wake-word detections within
         # 2 s of TTS finishing are ignored — the paused stream accumulates a
@@ -131,6 +132,7 @@ class AppController(QObject):
         win.confirmation_screen.confirmed.connect(self._on_confirmed)
         win.confirmation_screen.denied.connect(self._on_denied)
         win.inventory_screen.close_requested.connect(self._on_inventory_close)
+        win.inventory_screen.history_requested.connect(self._on_inventory_history)
         win.setup_wizard.setup_complete.connect(self._on_setup_complete)
 
     # ------------------------------------------------------------------
@@ -271,8 +273,9 @@ class AppController(QObject):
     def _on_recording_failed(self, reason: str) -> None:
         log.warning("Recording failed: %s", reason)
         self._win.confirmation_screen.hide_snowflake()
+        self._sm.force(AppState.LISTENING)
+        self._relisten_after_tts = True
         self._tts.speak("I didn't catch that. Please try again.")
-        self._sm.transition(AppState.INVENTORY)
         # _recording_active stays True until TTS finishes (_on_tts_finished)
 
     def _on_tts_finished(self) -> None:
@@ -295,7 +298,11 @@ class AppController(QObject):
             QTimer.singleShot(1000, lambda: self._win.confirmation_screen.set_voice_hint("Mic opens in 2s…"))
             QTimer.singleShot(2000, lambda: self._win.confirmation_screen.set_voice_hint("Mic opens in 1s…"))
             QTimer.singleShot(3000, self._start_recording)
+        elif self._relisten_after_tts and self._sm.current == AppState.LISTENING:
+            self._relisten_after_tts = False
+            QTimer.singleShot(500, self._start_recording)
         else:
+            self._relisten_after_tts = False
             # All other states (SLEEP, LISTENING, INVENTORY, etc.): resume the
             # detector so the next real "Hey Jarvis" is caught.
             # The 2-second grace period in on_wake_word_detected handles any
@@ -349,7 +356,7 @@ class AppController(QObject):
                 log.warning("Too many echo transcripts — returning to SLEEP.")
                 self._echo_count = 0
                 self._recording_active = False
-                self._sm.force(AppState.INVENTORY)
+                self._sm.force(AppState.SLEEP)
                 QTimer.singleShot(1500, self._resume_detector)
             elif self._sm.current in (AppState.LISTENING, AppState.CONFIRMING):
                 # Wait longer than the first delay to let any remaining echo clear.
@@ -369,8 +376,9 @@ class AppController(QObject):
 
     def _on_stt_failed(self, reason: str) -> None:
         log.warning("STT failed: %s", reason)
+        self._sm.force(AppState.LISTENING)
+        self._relisten_after_tts = True
         self._tts.speak("Sorry, I couldn't understand that. Please try again.")
-        self._sm.transition(AppState.INVENTORY)
 
     # ------------------------------------------------------------------
     # Intent parsed
@@ -454,7 +462,8 @@ class AppController(QObject):
 
         elif intent_type == IntentType.QUERY:
             results = self._fuzzy.search_all_locations(
-                parsed_intent.item_name or ""
+                parsed_intent.item_name or "",
+                location_filter=parsed_intent.location or None,
             )
             response = self._fuzzy.format_query_response(
                 query=parsed_intent.item_name or "",
@@ -466,7 +475,10 @@ class AppController(QObject):
                 (r.item.item_name, r.item.quantity, r.item.location)
                 for r in results
             ]
-            self._win.inventory_screen.load_data(rows, select_location="all")
+            self._win.inventory_screen.load_data(
+                rows,
+                select_location=parsed_intent.location or "all",
+            )
             self._sm.transition(AppState.INVENTORY)
 
         elif intent_type == IntentType.LIST:
@@ -488,8 +500,9 @@ class AppController(QObject):
             self._sm.transition(AppState.INVENTORY)
 
         elif intent_type == IntentType.UNKNOWN:
-            log.warning("Unknown intent — returning to INVENTORY.")
-            self._sm.force(AppState.INVENTORY)
+            log.warning("Unknown intent — re-listening.")
+            self._sm.force(AppState.LISTENING)
+            self._relisten_after_tts = True
             self._tts.speak("Sorry, I didn't understand.")
 
     # ------------------------------------------------------------------
@@ -506,10 +519,11 @@ class AppController(QObject):
         self._sm.transition(AppState.INVENTORY)
 
     def _on_denied(self) -> None:
-        log.info("User denied — returning to INVENTORY.")
+        log.info("User denied — re-listening.")
         self.reset_inactivity_timer()
         self._pending_intent = None
-        self._sm.force(AppState.INVENTORY)
+        self._sm.force(AppState.LISTENING)
+        self._relisten_after_tts = True
         self._tts.speak("Cancelled.")
 
     def _execute_intent(self, intent) -> None:
@@ -538,7 +552,10 @@ class AppController(QObject):
             item_loc  = intent._resolved_item_location or intent.location
             item_qty  = intent._resolved_item_quantity or intent.quantity
             if item_id is not None:
-                self._db.remove_item(item_id)
+                remove_status, item_after = self._db.remove_quantity(
+                    item_id,
+                    quantity_hint=intent.quantity,
+                )
                 self._db.log_action(
                     action="REMOVE",
                     item_name=item_name,
@@ -546,7 +563,12 @@ class AppController(QObject):
                     location=item_loc,
                     transcript=intent.raw_transcript,
                 )
-                self._tts.speak(f"Removed. {item_name} has been taken out.")
+                if remove_status == "decremented" and item_after is not None:
+                    self._tts.speak(
+                        f"Updated. {item_after.quantity} of {item_name} remain."
+                    )
+                else:
+                    self._tts.speak(f"Removed. {item_name} has been taken out.")
                 log.info("DB REMOVE: id=%d '%s'", item_id, item_name)
 
     # ------------------------------------------------------------------
@@ -556,6 +578,17 @@ class AppController(QObject):
     def _on_inventory_close(self) -> None:
         self.reset_inactivity_timer()
         self._sm.force(AppState.SLEEP)
+
+    def _on_inventory_history(self) -> None:
+        entries = []
+        for entry in self._db.get_audit_log(limit=25):
+            loc = self._cfg.get_location_display_name(entry.location or "")
+            qty = f"{entry.quantity} of " if entry.quantity else ""
+            entries.append(
+                f"{entry.timestamp}  {entry.action.title()}: {qty}{entry.item_name}"
+                + (f" ({loc})" if entry.location else "")
+            )
+        self._win.inventory_screen.show_history(entries)
 
     # ------------------------------------------------------------------
     # Setup wizard
@@ -567,6 +600,8 @@ class AppController(QObject):
             wake_word=config_data.get("wake_word", ""),
             model_name=config_data.get("wake_word_model", ""),
         )
+        if config_data.get("locations"):
+            self._cfg.set_locations(config_data["locations"])
         self._cfg.set_setup_complete(True)
         log.info("Config saved. Wake word: %s", config_data.get("wake_word"))
         self._sm.force(AppState.SLEEP)

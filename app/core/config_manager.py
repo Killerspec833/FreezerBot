@@ -142,6 +142,20 @@ class ConfigManager:
         self._config.wake_word_model = model_name
         self.save()
 
+    def set_locations(self, locations: dict[str, dict[str, list[str] | str]]) -> None:
+        parsed: dict[str, LocationConfig] = {}
+        for key, value in locations.items():
+            parsed[key] = LocationConfig(
+                display_name=str(value.get("display_name", key)).strip() or key,
+                aliases=[
+                    alias.strip()
+                    for alias in value.get("aliases", [])
+                    if str(alias).strip()
+                ],
+            )
+        self._config.locations = parsed
+        self.save()
+
     def validate_api_keys(self) -> list[str]:
         """Return list of missing key names. Empty list = all present."""
         missing = []

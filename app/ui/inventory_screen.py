@@ -11,9 +11,12 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QListWidget,
+    QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -36,6 +39,7 @@ from app.ui.widgets.snowflake_widget import SnowflakeWidget
 
 class InventoryScreen(QWidget):
     close_requested = pyqtSignal()
+    history_requested = pyqtSignal()
 
     def __init__(self, location_names: dict[str, str], parent=None):
         """
@@ -110,6 +114,19 @@ class InventoryScreen(QWidget):
         )
         layout.addWidget(self._count_label)
 
+        self._empty_label = QLabel(
+            "No items yet.\nTry saying: Add ground beef to the basement freezer."
+        )
+        self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_font = QFont()
+        empty_font.setPointSize(FONT_BODY)
+        self._empty_label.setFont(empty_font)
+        self._empty_label.setStyleSheet(
+            f"color: {COLOR_TEXT_SECONDARY}; padding: {PADDING}px;"
+        )
+        self._empty_label.hide()
+        layout.addWidget(self._empty_label)
+
         # Table
         self._table = QTableWidget(0, 3)
         self._table.setHorizontalHeaderLabels(["Item", "Qty", "Location"])
@@ -140,6 +157,21 @@ class InventoryScreen(QWidget):
         layout.addWidget(self._table)
 
         layout.addSpacing(PADDING)
+
+        self._action_bar = QWidget()
+        action_layout = QHBoxLayout(self._action_bar)
+        action_layout.setContentsMargins(MARGIN, 0, MARGIN, 0)
+        action_layout.setSpacing(PADDING)
+
+        self._history_btn = QPushButton("History")
+        self._history_btn.clicked.connect(self.history_requested.emit)
+        action_layout.addWidget(self._history_btn)
+
+        self._done_btn = QPushButton("Done")
+        self._done_btn.clicked.connect(self.close_requested.emit)
+        action_layout.addWidget(self._done_btn)
+
+        layout.addWidget(self._action_bar)
 
         # ---- Idle footer (shown when mic is off) ----
         self._idle_footer = QLabel("Tap or speak to get started")
@@ -216,3 +248,23 @@ class InventoryScreen(QWidget):
 
         count = len(visible)
         self._count_label.setText(f"{count} item{'s' if count != 1 else ''}")
+        is_empty = count == 0
+        self._empty_label.setVisible(is_empty)
+        self._table.setVisible(not is_empty)
+
+    def show_history(self, entries: list[str]) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Recent Changes")
+        dialog.setModal(True)
+        dialog.resize(720, 420)
+
+        layout = QVBoxLayout(dialog)
+        history_list = QListWidget(dialog)
+        history_list.addItems(entries or ["No recent changes yet."])
+        layout.addWidget(history_list)
+
+        close_btn = QPushButton("Close", dialog)
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+
+        dialog.exec()

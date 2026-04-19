@@ -1,8 +1,8 @@
 """
 Tests for IntentParser — JSON parsing, markdown stripping, intent mapping.
 
-No Gemini API calls are made: we test _parse_json() directly and mock
-_call_gemini() to return canned strings for end-to-end parse() tests.
+No network API calls are made: we test _parse_json() directly and mock
+_call_groq() to return canned strings for end-to-end parse() tests.
 """
 
 import json
@@ -113,7 +113,7 @@ class TestParseJson:
 
 
 class TestParseMocked:
-    """End-to-end parse() with _call_gemini mocked — tests location resolution."""
+    """End-to-end parse() with _call_groq mocked — tests location resolution."""
 
     def _good_response(self, intent, item=None, qty=None, loc=None):
         return json.dumps({
@@ -128,19 +128,19 @@ class TestParseMocked:
     def test_parse_add_with_known_location(self, parser):
         resp = self._good_response("ADD", item="salmon", qty="2",
                                    loc="basement_freezer")
-        with patch.object(parser, "_call_gemini", return_value=resp):
+        with patch.object(parser, "_call_groq", return_value=resp):
             intent = parser.parse("add 2 salmon to the basement")
         assert intent.intent_type == IntentType.ADD
         assert intent.location == "basement_freezer"
 
-    def test_parse_gemini_failure_returns_unknown(self, parser):
-        with patch.object(parser, "_call_gemini", return_value=None):
+    def test_parse_groq_failure_returns_unknown(self, parser):
+        with patch.object(parser, "_call_groq", return_value=None):
             intent = parser.parse("completely unintelligible $$#@")
         assert intent.intent_type == IntentType.UNKNOWN
 
     def test_parse_bad_json_retries_once(self, parser):
         # First call returns garbage, retry also returns garbage → UNKNOWN
-        with patch.object(parser, "_call_gemini", return_value="{{bad json"):
+        with patch.object(parser, "_call_groq", return_value="{{bad json"):
             intent = parser.parse("something")
         assert intent.intent_type == IntentType.UNKNOWN
 
@@ -148,6 +148,6 @@ class TestParseMocked:
         # First call fails JSON, second call succeeds
         good = self._good_response("QUERY", item="beef")
         calls = ["{{bad", good]
-        with patch.object(parser, "_call_gemini", side_effect=calls):
+        with patch.object(parser, "_call_groq", side_effect=calls):
             intent = parser.parse("is there beef")
         assert intent.intent_type == IntentType.QUERY

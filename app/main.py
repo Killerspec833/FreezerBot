@@ -15,13 +15,47 @@ import sys
 # Ensure the app/ directory is on the Python path when running directly
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QWidget
 from PyQt6.QtCore import Qt
 
 from app.core.path_resolver import get_usb_root, get_config_path, get_log_path
 from app.core.config_manager import ConfigManager
 from app.core.state_machine import StateMachine, AppState
 from app.services.logger import setup_logger, get_logger
+
+
+def _show_startup_error(message: str, detail: str = "") -> int:
+    app = QApplication.instance() or QApplication(sys.argv)
+    screen = QWidget()
+    screen.setWindowTitle("Freezerbot Startup Error")
+
+    layout = QVBoxLayout(screen)
+
+    title = QLabel(message)
+    title.setWordWrap(True)
+    title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    layout.addWidget(title)
+
+    if detail:
+        detail_label = QLabel(detail)
+        detail_label.setWordWrap(True)
+        detail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(detail_label)
+
+    hint = QLabel(
+        "Fix the problem, then restart Freezerbot.\nCheck the USB stick, network, and config files."
+    )
+    hint.setWordWrap(True)
+    hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    layout.addWidget(hint)
+
+    close_btn = QPushButton("Exit")
+    close_btn.clicked.connect(app.quit)
+    layout.addWidget(close_btn)
+
+    screen.resize(760, 420)
+    screen.show()
+    return app.exec()
 
 
 def main() -> int:
@@ -31,9 +65,8 @@ def main() -> int:
     try:
         usb_root = get_usb_root()
     except RuntimeError as e:
-        # Qt not yet running — print to stderr and exit
         print(f"[FATAL] {e}", file=sys.stderr)
-        return 1
+        return _show_startup_error("USB stick not found.", str(e))
 
     # ------------------------------------------------------------------
     # 2. Logger (needs log dir from USB stick)
@@ -50,10 +83,13 @@ def main() -> int:
         cfg_manager.load()
     except FileNotFoundError as e:
         log.critical("Config not found: %s", e)
-        return 1
+        return _show_startup_error("Configuration file missing.", str(e))
     except Exception as e:
         log.critical("Failed to load config: %s", e)
-        return 1
+        return _show_startup_error(
+            "Freezerbot could not load its configuration.",
+            str(e),
+        )
 
     # ------------------------------------------------------------------
     # 4. Qt application

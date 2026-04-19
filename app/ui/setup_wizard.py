@@ -9,7 +9,7 @@ Steps:
   4  Complete
 
 Emits setup_complete(dict) with:
-  { "wake_word": str, "wake_word_model": str }
+  { "wake_word": str, "wake_word_model": str, "locations": dict }
 """
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
@@ -17,6 +17,7 @@ from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QPushButton,
@@ -194,6 +195,12 @@ class _WelcomeStep(QWidget):
         swipe_hint.setStyleSheet("color: #FFFFFF;")
         layout.addWidget(swipe_hint)
 
+        nav, _, _ = _nav_buttons(
+            next_cb=self.next_requested.emit,
+            next_label="Continue",
+        )
+        layout.addLayout(nav)
+
         layout.addStretch(3)
 
     def mousePressEvent(self, event) -> None:
@@ -295,6 +302,7 @@ class _LocationsStep(QWidget):
         super().__init__(parent)
         self.setStyleSheet(f"background-color: {COLOR_BACKGROUND};")
         self._cfg = cfg_manager
+        self._inputs: dict[str, tuple[QLineEdit, QLineEdit]] = {}
         self._build()
 
     def _build(self) -> None:
@@ -304,7 +312,7 @@ class _LocationsStep(QWidget):
 
         layout.addWidget(_make_title("Storage\nLocations"))
         layout.addWidget(_make_small(
-            "These are the freezer locations Freezerbot knows about."
+            "Review and edit the names and spoken aliases Freezerbot should use."
         ))
 
         # Scrollable area for location cards
@@ -319,7 +327,7 @@ class _LocationsStep(QWidget):
         cards_layout.setContentsMargins(0, 0, 0, 0)
 
         for key, loc in self._cfg.config.locations.items():
-            card = self._make_location_card(loc.display_name, loc.aliases)
+            card = self._make_location_card(key, loc.display_name, loc.aliases)
             cards_layout.addWidget(card)
 
         cards_layout.addStretch()
@@ -332,8 +340,12 @@ class _LocationsStep(QWidget):
         )
         layout.addLayout(nav)
 
-    @staticmethod
-    def _make_location_card(display_name: str, aliases: list[str]) -> QWidget:
+    def _make_location_card(
+        self,
+        key: str,
+        display_name: str,
+        aliases: list[str],
+    ) -> QWidget:
         card = QWidget()
         card.setStyleSheet(f"""
             QWidget {{
@@ -354,16 +366,31 @@ class _LocationsStep(QWidget):
         name_lbl.setStyleSheet(f"color: {COLOR_TEXT_WHITE}; border: none;")
         cl.addWidget(name_lbl)
 
-        say_text = "Say:  " + "  ·  ".join(f'"{a}"' for a in aliases)
-        say_lbl = QLabel(say_text)
-        say_font = QFont()
-        say_font.setPointSize(FONT_SMALL)
-        say_lbl.setFont(say_font)
-        say_lbl.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; border: none;")
-        say_lbl.setWordWrap(True)
-        cl.addWidget(say_lbl)
+        display_input = QLineEdit(display_name)
+        display_input.setPlaceholderText("Display name")
+        cl.addWidget(display_input)
+
+        alias_input = QLineEdit(", ".join(aliases))
+        alias_input.setPlaceholderText("Aliases, comma separated")
+        cl.addWidget(alias_input)
+
+        self._inputs[key] = (display_input, alias_input)
 
         return card
+
+    def get_locations_data(self) -> dict[str, dict[str, list[str] | str]]:
+        result: dict[str, dict[str, list[str] | str]] = {}
+        for key, (display_input, alias_input) in self._inputs.items():
+            aliases = [
+                alias.strip()
+                for alias in alias_input.text().split(",")
+                if alias.strip()
+            ]
+            result[key] = {
+                "display_name": display_input.text().strip() or key,
+                "aliases": aliases or [key.replace("_", " ")],
+            }
+        return result
 
 
 # ---------------------------------------------------------------------------
@@ -664,6 +691,7 @@ class SetupWizard(QWidget):
         result = {
             "wake_word": display,
             "wake_word_model": model_name,
+            "locations": self._locations.get_locations_data(),
         }
         log.info("Setup wizard complete. Wake word: %s", display)
         self.setup_complete.emit(result)

@@ -8,6 +8,7 @@ Key design decisions:
   - Connection is opened once at init and closed explicitly on shutdown
 """
 
+import re
 import sqlite3
 from typing import Optional
 
@@ -128,6 +129,36 @@ class DatabaseManager:
         quantity  = quantity.strip()
         location  = location.strip()
 
+        existing = self._connection.execute(
+            """
+            SELECT * FROM inventory
+            WHERE item_name = ? AND location = ?
+            ORDER BY id ASC
+            LIMIT 1
+            """,
+            (item_name, location),
+        ).fetchone()
+
+        merged_quantity = self._merge_quantities(
+            existing["quantity"] if existing else None,
+            quantity,
+        )
+        if existing and merged_quantity is not None:
+            self._connection.execute(
+                """
+                UPDATE inventory
+                SET quantity = ?, updated_at = datetime('now', 'utc')
+                WHERE id = ?
+                """,
+                (merged_quantity, existing["id"]),
+            )
+            self._connection.commit()
+            log.info(
+                "ADD MERGED: id=%d  item='%s'  qty='%s'  loc='%s'",
+                existing["id"], item_name, merged_quantity, location,
+            )
+            return self._fetch_by_id(existing["id"])
+
         cur = self._connection.execute(
             """
             INSERT INTO inventory (item_name, quantity, location)
@@ -140,6 +171,49 @@ class DatabaseManager:
         log.info("ADD: id=%d  item='%s'  qty='%s'  loc='%s'",
                  row_id, item_name, quantity, location)
         return self._fetch_by_id(row_id)
+
+    def remove_quantity(
+        self,
+        item_id: int,
+        quantity_hint: Optional[str] = None,
+    ) -> tuple[str, Optional[InventoryItem]]:
+        row = self._connection.execute(
+            "SELECT * FROM inventory WHERE id = ?",
+            (item_id,),
+        ).fetchone()
+        if not row:
+            log.warning("REMOVE QUANTITY: id=%d not found.", item_id)
+            return "missing", None
+
+        current_item = self._row_to_item(row)
+        requested = self._parse_count_and_unit(quantity_hint or "")
+        current = self._parse_count_and_unit(current_item.quantity)
+
+        if (
+            requested is None
+            or current is None
+            or not self._units_match(requested[1], current[1])
+            or requested[0] >= current[0]
+        ):
+            self.remove_item(item_id)
+            return "deleted", current_item
+
+        remaining = current[0] - requested[0]
+        new_quantity = self._format_count_and_unit(remaining, current[1])
+        self._connection.execute(
+            """
+            UPDATE inventory
+            SET quantity = ?, updated_at = datetime('now', 'utc')
+            WHERE id = ?
+            """,
+            (new_quantity, item_id),
+        )
+        self._connection.commit()
+        log.info(
+            "REMOVE DECREMENTED: id=%d  from='%s'  to='%s'",
+            item_id, current_item.quantity, new_quantity,
+        )
+        return "decremented", self._fetch_by_id(item_id)
 
     def remove_item(self, item_id: int) -> bool:
         """Delete an inventory row by primary key. Returns True if a row was deleted."""
@@ -245,6 +319,41 @@ class DatabaseManager:
             timestamp=row["timestamp"],
             transcript=row["transcript"],
         )
+
+    @staticmethod
+    def _parse_count_and_unit(quantity: str) -> Optional[tuple[int, str]]:
+        match = re.match(r"^\s*(\d+)\s*([A-Za-z][A-Za-z\s]*)?\s*$", quantity or "")
+        if not match:
+            return None
+        count = int(match.group(1))
+        unit = " ".join((match.group(2) or "").strip().lower().split())
+        if unit.endswith("s") and len(unit) > 1:
+            unit = unit[:-1]
+        return count, unit
+
+    @staticmethod
+    def _units_match(left: str, right: str) -> bool:
+        return left == right or not left or not right
+
+    @classmethod
+    def _merge_quantities(
+        cls,
+        current_quantity: Optional[str],
+        new_quantity: str,
+    ) -> Optional[str]:
+        if current_quantity is None:
+            return None
+        current = cls._parse_count_and_unit(current_quantity)
+        new = cls._parse_count_and_unit(new_quantity)
+        if current is None or new is None or not cls._units_match(current[1], new[1]):
+            return None
+        return cls._format_count_and_unit(current[0] + new[0], current[1] or new[1])
+
+    @staticmethod
+    def _format_count_and_unit(count: int, unit: str) -> str:
+        if unit and count != 1 and not unit.endswith("s"):
+            unit = f"{unit}s"
+        return f"{count} {unit}".strip()
 
     def _create_schema(self) -> None:
         """Create tables and indexes if they do not exist."""

@@ -59,6 +59,7 @@ def _make_window():
     win.confirmation_screen.confirmed.connect = MagicMock()
     win.confirmation_screen.denied.connect = MagicMock()
     win.inventory_screen.close_requested.connect = MagicMock()
+    win.inventory_screen.history_requested.connect = MagicMock()
     win.setup_wizard.setup_complete.connect = MagicMock()
     return win
 
@@ -202,7 +203,7 @@ class TestAddFlow:
         assert len(audit) == 1
         assert audit[0].action == "ADD"
 
-        assert sm.current == AppState.SLEEP
+        assert sm.current == AppState.INVENTORY
         assert ctrl._pending_intent is None
 
     def test_confirmation_screen_populated_for_add(self, controller):
@@ -278,7 +279,7 @@ class TestRemoveFlow:
             ctrl.on_intent_parsed(intent)
 
         assert db.get_all_items() == []
-        assert sm.current == AppState.SLEEP
+        assert sm.current == AppState.INVENTORY
 
         audit = db.get_audit_log()
         assert audit[0].action == "REMOVE"
@@ -363,7 +364,7 @@ class TestRemoveFlow:
                           return_value=("none", None)):
             ctrl.on_intent_parsed(intent)
 
-        assert sm.current == AppState.SLEEP
+        assert sm.current == AppState.INVENTORY
         tts.speak.assert_called_once()
         assert db.get_all_items() == []
 
@@ -399,7 +400,9 @@ class TestQueryIntent:
         ctrl.on_intent_parsed(intent)
 
         assert sm.current == AppState.INVENTORY
-        win.inventory_screen.load_data.assert_called_once()
+        assert win.inventory_screen.load_data.call_count >= 1
+        rows = win.inventory_screen.load_data.call_args[0][0]
+        assert rows == [("beef", "2 packs", "basement_freezer")]
         tts.speak.assert_called_once()
 
     def test_query_uses_search_all_locations(self, controller):
@@ -409,7 +412,20 @@ class TestQueryIntent:
         with patch.object(ctrl._fuzzy, "search_all_locations",
                           return_value=[]) as mock_search:
             ctrl.on_intent_parsed(intent)
-        mock_search.assert_called_once_with("salmon")
+        mock_search.assert_called_once_with("salmon", location_filter=None)
+
+    def test_query_uses_location_filter_when_present(self, controller):
+        ctrl, win, db, tts, sm = controller
+
+        intent = _make_intent(
+            IntentType.QUERY,
+            item_name="salmon",
+            location="fridge",
+        )
+        with patch.object(ctrl._fuzzy, "search_all_locations",
+                          return_value=[]) as mock_search:
+            ctrl.on_intent_parsed(intent)
+        mock_search.assert_called_once_with("salmon", location_filter="fridge")
 
     def test_query_no_results_speaks_not_found(self, controller):
         ctrl, win, db, tts, sm = controller
@@ -462,8 +478,13 @@ class TestUnknownIntent:
         ctrl, win, db, tts, sm = controller
 
         intent = _make_intent(IntentType.UNKNOWN)
-        with patch.object(ctrl, "_start_recording") as mock_record:
+        with (
+            patch.object(ctrl, "_start_recording") as mock_record,
+            patch("app.core.app_controller.QTimer.singleShot",
+                  side_effect=lambda delay, fn: fn()),
+        ):
             ctrl.on_intent_parsed(intent)
+            ctrl._on_tts_finished()
 
         mock_record.assert_called_once()
         assert sm.current == AppState.LISTENING
@@ -492,7 +513,7 @@ class TestVoiceConfirmDeny:
         # Should have executed the ADD
         items = db.get_all_items()
         assert any(i.item_name == "tuna" for i in items)
-        assert sm.current == AppState.SLEEP
+        assert sm.current == AppState.INVENTORY
 
     def test_voice_deny_while_confirming_calls_on_denied(self, controller):
         ctrl, win, db, tts, sm = controller

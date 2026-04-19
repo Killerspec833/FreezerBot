@@ -101,11 +101,15 @@ class FuzzySearch:
     def search_all_locations(
         self,
         query: str,
+        location_filter: str | None = None,
     ) -> list[SearchResult]:
         """Search across all locations, deduplicating by item name + location."""
         from rapidfuzz import fuzz, process
 
-        all_items = self._db.get_all_items()
+        if location_filter:
+            all_items = self._db.list_by_location(location_filter)
+        else:
+            all_items = self._db.get_all_items()
         if not all_items:
             return []
 

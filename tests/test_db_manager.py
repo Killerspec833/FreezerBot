@@ -28,6 +28,12 @@ class TestAddItem:
         b = db.add_item("pork", "1", "basement_freezer")
         assert a.id != b.id
 
+    def test_merges_numeric_quantity_for_same_item_and_location(self, db):
+        db.add_item("beef", "1 pack", "basement_freezer")
+        item = db.add_item("beef", "2 pack", "basement_freezer")
+        assert item.quantity == "3 packs"
+        assert len(db.get_all_items()) == 1
+
 
 class TestRemoveItem:
     def test_removes_existing_item(self, db):
@@ -43,6 +49,12 @@ class TestRemoveItem:
     def test_does_not_raise_for_missing_id(self, db):
         # Should log a warning, not crash
         db.remove_item(0)
+
+    def test_remove_quantity_decrements_when_possible(self, db):
+        item = db.add_item("steak", "3 bags", "basement_freezer")
+        status, updated = db.remove_quantity(item.id, "1 bag")
+        assert status == "decremented"
+        assert updated.quantity == "2 bags"
 
 
 class TestGetAllItems:
